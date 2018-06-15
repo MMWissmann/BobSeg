@@ -75,25 +75,29 @@ class NetSurf2dt:
         '''        
         self.w = np.zeros([len(self.images), self.num_columns, self.K]) # node weights
         self.w_tilde = np.zeros_like( self.w )
-
+        NoneType = type(None)
         # fill in node weights
-        for t in range(len(self.images)):
-            for i in range(self.num_columns):
-                from_x = int(self.centers[t][0] + self.col_vectors[i,0]*self.min_radius[0])
-                from_y = int(self.centers[t][1] + self.col_vectors[i,1]*self.min_radius[1])
-                to_x = int(self.centers[t][0] + self.col_vectors[i,0]*self.max_radius[0])
-                to_y = int(self.centers[t][1] + self.col_vectors[i,1]*self.max_radius[1])
-                coords = bham.bresenhamline(np.array([[from_x, from_y]]), np.array([[to_x, to_y]]))
-                num_pixels = len(coords)
-                for k in range(self.K):
-                    start = int(k * float(num_pixels)/self.K)
-                    end = max( start+1, start + num_pixels/self.K )
-                    self.w[t,i,k] = -1 * self.compute_weight_at(t,coords[start:end])
+        for t in range(len(self.images)):            
+            if isinstance(self.centers[t],NoneType):
+                continue
+            else:
+                for i in range(self.num_columns):
+                    from_x = int(self.centers[t][0] + self.col_vectors[i,0]*self.min_radius[0])
+                    from_y = int(self.centers[t][1] + self.col_vectors[i,1]*self.min_radius[1]) 
+                    to_x = int(self.centers[t][0] + self.col_vectors[i,0]*self.max_radius[0]) 
+                    to_y = int(self.centers[t][1] + self.col_vectors[i,1]*self.max_radius[1])
+                    coords = bham.bresenhamline(np.array([[from_x, from_y]]), np.array([[to_x, to_y]]))
+                    num_pixels = len(coords)
+                    for k in range(self.K):
+                        start = int(k * float(num_pixels)/self.K)
+                        end = int(max( start+1, start + num_pixels/self.K ))
+                        self.w[t,i,k] = -1 * self.compute_weight_at(t,coords[(start):(end)])
 
-            for i in range(self.num_columns):
-                self.w_tilde[t,i,0] = self.w[t,i,0] 
-                for k in range(1,self.K):
-                    self.w_tilde[t,i,k] = self.w[t,i,k]-self.w[t,i,k-1]
+                for i in range(self.num_columns):
+                    self.w_tilde[t,i,0] = self.w[t,i,0] 
+                    for k in range(1,self.K):
+                        self.w_tilde[t,i,k] = self.w[t,i,k]-self.w[t,i,k-1]
+                
 
     def compute_weight_at( self, t, coords ):
         '''
@@ -154,8 +158,8 @@ class NetSurf2dt:
                         try:
                             self.g.add_edge(self.nid(t,i,k), self.nid(t2,i,k2), self.INF, 0)
                         except:
-                            print t, i, k, self.nid(t,i,k), len(self.nodes)
-                            print t2, i, k2, self.nid(t2,i,k2), len(self.nodes)
+                            print(t, i, k, self.nid(t,i,k), len(self.nodes))
+                            print(t2, i, k2, self.nid(t2,i,k2), len(self.nodes))
                             raise
                     
     def nid( self, t, i, k ):
@@ -184,7 +188,7 @@ class NetSurf2dt:
         for i in range(self.num_columns):
             pa = self.get_surface_point( t, i )
             pb = self.get_surface_point( t, (i+1)%self.num_columns )
-            area += self.get_triangle_area( pa, pb, self.centers[t], calibration )
+            area = area + self.get_triangle_area( pa, pb, self.centers[t], calibration )
         return area
     
     def get_triangle_area( self, pa, pb, pc, calibration ):
@@ -205,13 +209,17 @@ class NetSurf2dt:
         for k in range(self.K):
             if self.g.get_segment(self.nid(t,column_id,k)) == 1: break # leave as soon as k is first outside point
         k-=1
-        x = int(self.centers[t][0] + self.col_vectors[column_id,0] * 
-                self.min_radius[0] + self.col_vectors[column_id,0] * 
-                (k-1)/float(self.K) * (self.max_radius[0]-self.min_radius[0]) )
-        y = int(self.centers[t][1] + self.col_vectors[column_id,1] * 
-                self.min_radius[1] + self.col_vectors[column_id,1] * 
-                (k-1)/float(self.K) * (self.max_radius[1]-self.min_radius[1]) )
-        return (x,y)
+        NoneType = type(None)            
+        if isinstance(self.centers[t],NoneType):
+            print("No Surface Point for frame", t)
+        else:
+            x = int(self.centers[t][0] + self.col_vectors[column_id,0] * 
+                    self.min_radius[0] + self.col_vectors[column_id,0] * 
+                    (k-1)/float(self.K) * (self.max_radius[0]-self.min_radius[0]) )
+            y = int(self.centers[t][1] + self.col_vectors[column_id,1] * 
+                    self.min_radius[1] + self.col_vectors[column_id,1] * 
+                    (k-1)/float(self.K) * (self.max_radius[1]-self.min_radius[1]) )
+            return (x,y)
     
     def get_surface_index( self, t, column_id ):
         for k in range(self.K):

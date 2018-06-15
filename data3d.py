@@ -1,9 +1,10 @@
-import cPickle as pickle
+import _pickle as pickle
 
 import cv2
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import math
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Ellipse
 from matplotlib.patches import Polygon
@@ -55,6 +56,7 @@ class Data3d:
         """
         self.silent = silent
         self.images = [None] * segimages.shape[0]
+       
         for i in range (segimages.shape[0]):
             self.images[i] = segimages[i]
         if not pixelsize is None: self.pixelsize = pixelsize
@@ -79,7 +81,7 @@ class Data3d:
             self.object_names.append(name)
         self.object_seedpoints[oid] = [None] * len(self.images)
         self.object_min_surf_dist[oid] = [(0,0)] * len(self.images)
-        self.object_max_surf_dist[oid] = [(100,100)] * len(self.images)
+        self.object_max_surf_dist[oid] = [(130,160)] * len(self.images)
         self.object_areas[oid] = [0] * len(self.images)
         self.netsurfs[oid] = [None] * len(self.images)
         self.netsurf2dt[oid] = None
@@ -123,9 +125,9 @@ class Data3d:
                                                                      np.array(seed_to), 
                                                                      float(i-frame)/(1+frame_to-frame))
             if not self.silent:
-                print 'Added appearance for "'+str(self.object_names[oid])+ \
+                print('Added appearance for "'+str(self.object_names[oid])+ \
                       '" in frame', i, \
-                      'with seed coordinates', self.object_seedpoints[oid][i]
+                      'with seed coordinates', self.object_seedpoints[oid][i])
             if segment_it: self.segment_frame( oid, i )
 
     def interpolate_points( self, start, end, fraction ):
@@ -143,7 +145,7 @@ class Data3d:
         try:
             self.netsurfs[oid][f] = None
         except:
-            print 'LAZY INIT NETSURFS'
+            print('LAZY INIT NETSURFS')
             self.netsurfs[oid] = [None] * len(self.images)
         
         self.netsurfs[oid][f] = NetSurf2d(self.num_columns, K=self.K, max_delta_k=self.max_delta_k)
@@ -153,10 +155,10 @@ class Data3d:
                                                  min_radius=self.object_min_surf_dist[oid][f])
         self.object_areas[oid][f] = self.netsurfs[oid][f].get_area( self.pixelsize )
         if not self.silent:
-            print '      Optimum energy: ', optimum
+            print('      Optimum energy: ', optimum)
             ins, outs = self.netsurfs[oid][f].get_counts()
-            print '      Nodes in/out: ', ins, outs
-            print '      Area: ', self.object_areas[oid][f]
+            print('      Nodes in/out: ', ins, outs)
+            print('      Area: ', self.object_areas[oid][f])
             
     def segment2dt( self, oid, max_radial_delta=2 ):
         '''
@@ -169,14 +171,20 @@ class Data3d:
                                           max_delta_k_t=max_radial_delta)
         optimum = self.netsurf2dt[oid].apply_to(self.images, 
                                            self.object_seedpoints[oid], 
-                                           self.object_max_surf_dist[oid][0], # note: frame 0 currently rules them all
+                                           self.object_max_surf_dist[oid][0], # note: 1. frame currently rules them all
                                            min_radius=self.object_min_surf_dist[oid][0])
         for t in range(len(self.images)):
-            self.object_areas[oid][t] = self.netsurf2dt[oid].get_area( t, self.pixelsize )
-            if not self.silent:
-                print 'Results for frame %d:'%(t)
-                print '      Optimum energy: ', optimum
-                print '      Area: ', self.object_areas[oid][t]
+            NoneType = type(None)            
+            if isinstance(self.netsurf2dt[oid].centers[t],NoneType):
+                print("No results for frame:",t)
+            else:
+                self.object_areas[oid][t] = self.netsurf2dt[oid].get_area( t, self.pixelsize )
+                if math.isnan(self.object_areas[oid][t]) is False:
+                    if not self.silent:
+                        print('Results for frame %d:'%(t))
+                        print('      Optimum energy: ', optimum)
+                        print('      Area: ', self.object_areas[oid][t])
+                else: print("Area too small for Python.. For frame", t)
         
             
     # ***************************************************************************************************
@@ -202,9 +210,9 @@ class Data3d:
                 better_centers[f] = np.array(netsurf.get_surface_point(0))
                 for i in range(1,netsurf.num_columns):
                     better_centers[f] += netsurf.get_surface_point(i)
-                better_centers[f] /= netsurf.num_columns
+                better_centers[f] = better_centers[f] / netsurf.num_columns
                 if not self.silent:
-                    print '    Updated center to',better_centers[f]
+                    print('    Updated center to',better_centers[f])
         # update seedpoints if that was desired
         if set_as_new: self.object_seedpoints[oid] = better_centers
         return better_centers
@@ -255,8 +263,8 @@ class Data3d:
                                                 flags=1)
             self.flows[f] = flow
             prvs = nxt
-            print '.',
-        print ' ...done!'
+            print('.',)
+        print(' ...done!')
         return self.flows
 
     # ***************************************************************************************
@@ -301,7 +309,7 @@ class Data3d:
         for i in range( len(col_vectors) ):
             points.append( netsurf.get_surface_point(i) )
         return points
-    
+
     def get_result_polygone_2dt( self, oid, frame ):
         points=[]
         col_vectors = self.netsurf2dt[oid].col_vectors
@@ -428,14 +436,32 @@ class Data3d:
         segimgs = np.zeros_like(self.images)
         for f in range(len(self.images)):
             vis = np.zeros((np.shape(segimgs)[1],np.shape(segimgs)[2],3), np.uint8)
-
+            print("works", f)
             # retrieve polygones
             polygones = []
+            print("out:ID", self.object_names)
             for oid in range(len(self.object_names)):
-                if self.netsurf2dt is None or dont_use_2dt:
-                    polygones.append( self.get_result_polygone(oid,f) )
+                print("in:ID", self.object_names)
+                if self.netsurf2dt[0] is None or dont_use_2dt:
+                    NoneType = type(None)            
+                    if isinstance(self.netsurfs[oid][f],NoneType):
+                        print("NoneType", f)
+                        #onlyzeros = np.zeros_like(self.get_result_polygone_2dt(oid,f))
+                        #polygones.append(onlyzeros)
+                        continue
+                    else:
+                        print("Type", f)                    
+                        polygones.append( self.get_result_polygone(oid,f) )
                 else:
-                    polygones.append( self.get_result_polygone_2dt(oid,f) )
+                    NoneType = type(None)            
+                    if isinstance(self.netsurf2dt[oid].centers[f],NoneType):
+                        print("NoneType", f)
+                        #onlyzeros = np.zeros_like(self.get_result_polygone_2dt(oid,f))
+                        #polygones.append(onlyzeros)
+                        continue
+                    else:
+                        print("Type", f)
+                        polygones.append( self.get_result_polygone_2dt(oid,f) )
 
             # draw polygones
             for polygone in polygones:
