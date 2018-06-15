@@ -436,31 +436,20 @@ class Data3d:
         segimgs = np.zeros_like(self.images)
         for f in range(len(self.images)):
             vis = np.zeros((np.shape(segimgs)[1],np.shape(segimgs)[2],3), np.uint8)
-            print("works", f)
             # retrieve polygones
             polygones = []
-            print("out:ID", self.object_names)
             for oid in range(len(self.object_names)):
-                print("in:ID", self.object_names)
                 if self.netsurf2dt[0] is None or dont_use_2dt:
                     NoneType = type(None)            
                     if isinstance(self.netsurfs[oid][f],NoneType):
-                        print("NoneType", f)
-                        #onlyzeros = np.zeros_like(self.get_result_polygone_2dt(oid,f))
-                        #polygones.append(onlyzeros)
                         continue
-                    else:
-                        print("Type", f)                    
+                    else:               
                         polygones.append( self.get_result_polygone(oid,f) )
                 else:
                     NoneType = type(None)            
                     if isinstance(self.netsurf2dt[oid].centers[f],NoneType):
-                        print("NoneType", f)
-                        #onlyzeros = np.zeros_like(self.get_result_polygone_2dt(oid,f))
-                        #polygones.append(onlyzeros)
                         continue
                     else:
-                        print("Type", f)
                         polygones.append( self.get_result_polygone_2dt(oid,f) )
 
             # draw polygones
