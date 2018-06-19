@@ -3,9 +3,9 @@ import bresenham as bham
 import maxflow
 import math
 from tifffile import imread, imsave
-import cPickle as pickle
+import _pickle as pickle
 
-from spimagine import volfig, volshow
+#from spimagine import volfig, volshow
 #from spimagine import EllipsoidMesh, Mesh
 
 from netsurface3d import NetSurf3d
@@ -127,9 +127,9 @@ class Data4d:
                                                                      np.array(seed_to), 
                                                                      float(i-frame)/(1+frame_to-frame))
             if not self.silent:
-                print 'Added appearance for "'+str(self.object_names[oid])+ \
+                print('Added appearance for "'+str(self.object_names[oid])+ \
                       '" in frame', i, \
-                      'with seed coordinates', self.object_seedpoints[oid][i]
+                      'with seed coordinates', self.object_seedpoints[oid][i])
             if segment_it: self.segment_frame( oid, i )
 
     def interpolate_points( self, start, end, fraction ):
@@ -144,17 +144,17 @@ class Data4d:
             oids = range(len(self.object_names)) # all ever added
         for i,oid in enumerate(oids):
             if not self.silent:
-                print 'Working on "'+str(self.object_names[oid])+ \
-                      '" (object', i+1, 'of', len(oids),')...'
+                print('Working on "'+str(self.object_names[oid])+ \
+                      '" (object', i+1, 'of', len(oids),')...')
             self.netsurfs[oid] = [None] * len(self.images)
             for f, visible in enumerate(self.object_visibility[oid]):
                 if visible:
                     if not self.silent:
-                        print '   Segmenting in frame '+str(f)+'...' 
+                        print('   Segmenting in frame '+str(f)+'...')
                     self.segment_frame( oid, f )
                     self.object_volumes[oid][f] = self.netsurfs[oid][f].get_volume( self.pixelsize )
                     if not self.silent:
-                        print '      Volume: ', self.object_volumes[oid][f]
+                        print('      Volume: ', self.object_volumes[oid][f])
 
     def segment_frame( self, oid, f ):
         """
@@ -177,9 +177,9 @@ class Data4d:
                                                  self.object_max_surf_dist[oid][f], 
                                                  min_radii=self.object_min_surf_dist[oid][f])
         if not self.silent:
-            print '      Optimum energy: ', optimum
+            print('      Optimum energy: ', optimum)
             ins, outs = self.netsurfs[oid][f].get_counts()
-            print '      Nodes in/out: ', ins, outs
+            print('      Nodes in/out: ', ins, outs)
             
     # ***************************************************************************************************
     # *** TRACKING&REFINEMENT *** TRACKING&REFINEMENT *** TRACKING&REFINEMENT *** TRACKING&REFINEMENT ***
@@ -206,7 +206,7 @@ class Data4d:
                     better_centers[f] += netsurf.get_surface_point(i)
                 better_centers[f] /= netsurf.num_columns
                 if not self.silent:
-                    print '    Updated center to',better_centers[f]
+                    print('    Updated center to',better_centers[f])
         # update seedpoints if that was desired
         if set_as_new: self.object_seedpoints[oid] = better_centers
         return better_centers
@@ -253,7 +253,7 @@ class Data4d:
             'K'                    : self.K,
             'max_delta_k'          : self.max_delta_k,
         }
-        with open(filename,'w') as f:
+        with open(filename,'wb') as f:
             pickle.dump(dictDataStorage,f)
 
     def load( self, filename, compute_netsurfs=True ):
@@ -278,8 +278,8 @@ class Data4d:
 
     def load_sphere_sampling( self ):
         # load pickeled unit sphere sampling
-        with open('sphere_sampling.pkl','r') as f:
-            dictSphereData = pickle.load(f)
+        with open("sphere_sampling_unix.pkl","rb") as f:
+            dictSphereData = pickle.load(f, encoding='latin1')
 
         # sampling parameters
         self.vectors = dictSphereData['points']
@@ -292,12 +292,40 @@ class Data4d:
         for i in range(len(filenames)):
             self.images[i] = imread(filenames[i])
             if not self.silent:
-                print 'Dimensions of frame', i, ': ', self.images[i].shape
+                print('Dimensions of frame', i, ': ', self.images[i].shape)
             
     # ***************************************************************************************************
     # *** VISUALISATION STUFF *** VISUALISATION STUFF *** VISUALISATION STUFF *** VISUALISATION STUFF ***
     # ***************************************************************************************************
             
+        
+    def get_result_polygone( self, oid, frame ):
+        points=[]
+        col_vectors = self.netsurfs[oid][frame].col_vectors
+        netsurf = self.netsurfs[oid][frame]
+        for i in range( len(col_vectors) ):
+            points.append( netsurf.get_surface_point(i) )
+        return points
+    
+    def create_segmentation_image(self, dont_use_2dt=False):
+        segimgs = np.zeros_like(self.images)
+        for f in range(len(self.images)):
+            vis = np.zeros((np.shape(segimgs)[1],np.shape(segimgs)[2],3), np.uint8)
+            # retrieve polygones
+            polygones = []
+            for oid in range(len(self.object_names)):
+                assert oid>=0 and oid<len(self.object_names)      
+                polygones.append( self.get_result_polygone(oid,f) )
+
+            # draw polygones
+            for polygone in polygones:
+                cv2.polylines(vis, np.array([polygone], 'int32'), 1, (128,128,128), 2)
+                cv2.polylines(vis, np.array([polygone], 'int32'), 1, (255,255,255), 1)
+
+
+            segimgs[f] = vis[:,:,0]
+        return segimgs
+    
     def show_frame( self, f, show_surfaces=False, show_centers=False, stackUnits=[1.,1.,1.], raise_window=True ):
         assert f>=0 and f<len(self.images)
         

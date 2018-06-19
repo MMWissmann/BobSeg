@@ -3,7 +3,7 @@ import bresenham as bham
 import maxflow
 import math
 
-from spimagine import EllipsoidMesh, Mesh
+#from spimagine import EllipsoidMesh, Mesh
 
 class NetSurf3d:
     """
@@ -84,7 +84,7 @@ class NetSurf3d:
             num_pixels = len(coords)
             for k in range(self.K):
                 start = int(k * float(num_pixels)/self.K)
-                end = max( start+1, start + num_pixels/self.K )
+                end = int(max( start+1, start + num_pixels/self.K ))
                 self.w[i,k] = -1 * self.compute_weight_at(coords[start:end])
 
         if inverse_order:
