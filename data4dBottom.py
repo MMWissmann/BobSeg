@@ -56,9 +56,6 @@ class Data4dBottom:
         self.silent = silent
         self.filenames = filenames
         if not pixelsize is None: self.pixelsize = pixelsize
-
-        # load sampling setup
-        self.load_sphere_sampling()
         
         # load images
         self.load_from_files( self.filenames )
@@ -116,11 +113,6 @@ class Data4dBottom:
         assert frame <= frame_to
         
         for i in range(frame,frame_to+1):
-            print(min_rs)
-            print(oid)
-            print(i)
-            print(self.object_min_surf_dist)
-            #print(self.object_min_surf_dist[oid][i])
             self.object_min_surf_dist[oid][i] = (min_rs)
             self.object_max_surf_dist[oid][i] = max_rs        
             self.object_visibility[oid][i] = True
@@ -239,17 +231,6 @@ class Data4dBottom:
         self.load_from_files( self.filenames ) # load the raw images from file too!!!
         if compute_netsurfs: self.segment()
 
-    def load_sphere_sampling( self ):
-        # load pickeled unit sphere sampling
-        with open("sphere_sampling_unix.pkl","rb") as f:
-            dictSphereData = pickle.load(f, encoding='latin1')
-
-        # sampling parameters
-        self.vectors = dictSphereData['points']
-        self.neighbors = dictSphereData['neighbors']
-        self.neighbors_of = dictSphereData['neighbors_of']
-        self.triangles = dictSphereData['triangles']
-
     def load_from_files( self, filenames ):
         self.images = [None]*len(filenames)
         for i in range(len(filenames)):
@@ -312,8 +293,6 @@ class Data4dBottom:
         for oid in range(len(self.object_names)):
             netsurf = self.netsurfs[oid][f]
             if not netsurf is None:
-                if show_centers:  self.spimagine.glWidget.add_mesh( 
-                        netsurf.create_center_mesh( facecolor=self.colors_diverse[0]) )
                 if show_surfaces: self.spimagine.glWidget.add_mesh( 
                         netsurf.create_surface_mesh( facecolor=self.colors_diverse[0]) )
         return self.spimagine
