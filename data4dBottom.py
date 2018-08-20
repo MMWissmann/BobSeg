@@ -64,11 +64,14 @@ class Data4dBottom:
     # *** SEGMENTATION STUFF *** SEGMENTATION STUFF *** SEGMENTATION STUFF *** SEGMENTATION STUFF ***
     # ***********************************************************************************************
 
-    def set_seg_params( self, K, max_delta_k, divx, divy ):
+    def set_seg_params( self, K, max_delta_k, divx, divy,min_dist, max_dist, s  ):
         self.K = K
         self.max_delta_k = max_delta_k
         self.divx = divx
         self.divy = divy
+        self.min=min_dist
+        self. max=max_dist
+        self.surfaces=s
         
     def init_object( self, name ):
         """
@@ -123,27 +126,6 @@ class Data4dBottom:
             if segment_it: 
                 self.segment_frame( oid, i )
     
-    def segment( self, oids=None ):
-        """
-        Segments all added object occurances using NetSurf3dFromBottom.
-        If oids is not given (None) this will be done for ALL objects at ALL time points.
-        """
-        if oids is None:
-            oids = range(len(self.object_names)) # all ever added
-        for i,oid in enumerate(oids):
-            if not self.silent:
-                print('Working on "'+str(self.object_names[oid])+ \
-                      '" (object', i+1, 'of', len(oids),')...')
-            self.netsurfs[oid] = [None] * len(self.images)
-            for f, visible in enumerate(self.object_visibility[oid]):
-                if visible:
-                    if not self.silent:
-                        print('   Segmenting in frame '+str(f)+'...')
-                    self.segment_frame( oid, f )
-                    self.object_volumes[oid][f] = self.netsurfs[oid][f].get_volume( self.pixelsize )
-                    if not self.silent:
-                        print('      Volume: ', self.object_volumes[oid][f])
-
     def segment_frame( self, oid, f ):
         """
         Segments object oid in frame f.
@@ -158,7 +140,7 @@ class Data4dBottom:
         except:
             self.netsurfs[oid] = [None] * len(self.images)
         
-        self.netsurfs[oid][f] = NetSurfBottom(K=self.K, max_delta_k=self.max_delta_k, divx=self.divx, divy=self.divy)
+        self.netsurfs[oid][f] = NetSurfBottom(K=self.K, max_delta_k=self.max_delta_k, divx=self.divx, divy=self.divy, min_dist=self.min, max_dist=self.max, s=self.surfaces)
         optimum = self.netsurfs[oid][f].apply_to(self.images[f], 
                                                  self.object_max_surf_dist[oid][f], 
                                                  self.object_min_surf_dist[oid][f])
@@ -167,30 +149,6 @@ class Data4dBottom:
             ins, outs = self.netsurfs[oid][f].get_counts()
             print('      Nodes in/out: ', ins, outs)
             
-    # ***************************************************************************************************
-    # *** TRACKING&REFINEMENT *** TRACKING&REFINEMENT *** TRACKING&REFINEMENT *** TRACKING&REFINEMENT ***
-    # ***************************************************************************************************
-    
-    def track( self, oid, seed_frame, target_frames ):
-        """
-        For the object with the given id this function tries to fill in missing frames.
-        Note: this will only work if the object seed in seed_frame lies within the desired object in
-        the first target_frames and the re-evaluated center in each consecutive target frame (iterated).
-        Parameters:
-            oid           -  object id that should be tracked
-            seed_frame    -  frame id that was previously seeded (using add_object_at)
-            target_frame  -  list of frame ids the object should be tracked at
-         """
-        assert oid>=0
-        assert oid<=len(self.object_names)
-        print(oid)
-        print(self.object_min_surf_dist[oid][seed_frame])
-
-        min_rs = self.object_min_surf_dist[oid][seed_frame]
-        max_rs = self.object_max_surf_dist[oid][seed_frame]
-        for f in target_frames:
-            self.add_object_at( oid, min_rs, max_rs, f )
-            self.segment_frame( oid, f )
 
     # *****************************************************************************************************
     # *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD *** SAVE&LOAD ***

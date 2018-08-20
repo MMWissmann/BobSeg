@@ -28,13 +28,13 @@ class NetSurfBottom:
     g = None
     maxval = None
     
-    def __init__(self, K=50, max_delta_k=4, divx=1, divy=1, min_dist=0, max_dist=50, s=1):
+    def __init__(self, K=50, max_delta_k=4, divx=1, divy=1, min_dist=0, max_dist=20, s=1):
         """
         Parameters:
             K           -  how many sample points per column
             max_delta_k -  maximum column height change between neighbors (as defined by adjacency)
             div         -  divisor: choose only every divth pixel to create a column on base graph, for x and y
-            dist        -  minimum and maximum intersurface distances in terms of K
+            dist        -  minimum and maximum intersurface distances !in terms of K!
             s           -  number of surfaces to be detected
         """           
         self.divx = divx
@@ -100,7 +100,7 @@ class NetSurfBottom:
         
         self.col_vectors = self.base_points(self.divx, self.divy)
                                         
-        print(self.num_columns)
+        print('Number of columns:', self.num_columns)
         
         self.compute_weights()
         self.build_flow_network()
@@ -148,11 +148,12 @@ class NetSurfBottom:
         
         If alpha != None this method will add an additional weighted flow edge (horizontal binary costs.
         '''
+        print(self.surfaces)
         self.num_nodes = self.surfaces*self.num_columns*self.K
         # estimated num edges (in case I'd have 4 num neighbors and full pencils)
-        self.num_edges = ( self.num_nodes * 4 * (self.max_delta_k + self.max_delta_k+1) ) * .5
+        #self.num_edges = ( self.num_nodes * 4 * (self.max_delta_k + self.max_delta_k+1) ) * .5
 
-        self.g = maxflow.Graph[float]( self.num_nodes, self.num_edges)
+        self.g = maxflow.Graph[float]( self.num_nodes)
         self.nodes = self.g.add_nodes( self.num_nodes )
         
         NoneType = type(None)
@@ -161,6 +162,7 @@ class NetSurfBottom:
             
             c=s*self.num_columns
             c_above=(s-1)*self.num_columns
+            print('c',c)
 
             for i in range( self.num_columns ):
 
@@ -194,11 +196,11 @@ class NetSurfBottom:
                     for k in range(self.K):
                         if k >= self.max_dist:
                             #introducing max intersurface distance
-                            self.g.add_edge(c_above+i*self.K+k, c+i*self.K+k-self.max_dist, self.INF, 0)
-                        elif k < self.K - self.min_dist:
+                            self.g.add_edge(c_above+i*self.K+k, c+i*self.K-self.max_dist, self.INF, 0)
+                        if k < self.K - self.min_dist:
                             #introducing min intersurface distance
-                            self.g.add_edge(c+i*self.K+k, c_above+i*self.K+k+self.min_dist, self.INF, 0)
-                        else: continue
+                            self.g.add_edge(c+i*self.K+k, c_above+i*self.K+self.min_dist, self.INF, 0)
+                        else: print('deficient')
                             
     def calculate_neighbors_of(self,point):
         '''
@@ -370,6 +372,7 @@ class NetSurfBottom:
     
     
     def create_surface_mesh( self, facecolor=(1.,.3,.2) ):
+        pixels=self.image.shape[1]*self.image.shape[2]
         myverts = np.zeros((self.num_columns, 3))
         x=np.zeros((self.num_columns,3))
         myindices=self.get_triangles()
