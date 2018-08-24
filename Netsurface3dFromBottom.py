@@ -2,7 +2,6 @@ import numpy as np
 import bresenham as bham
 import maxflow
 import math
-from scipy.spatial import Delaunay
 
 from spimagine import EllipsoidMesh, Mesh
 
@@ -48,9 +47,10 @@ class NetSurfBottom:
     def base_points(self, nx, ny):
         """
         choose every nxth point in x-direction (nyth point in y-direction) to be vertex on base graph
+          --> Rectangular base graph with equally spreaded vertices
         returns (x,y) coordinates of these vertices
         self.num_columns: total number of columns
-        self.ymax/xmax: total number of columns in 1D (y and x)
+        self.ymax (xmax): total number of columns in 1D (y and x)
         """
         x_frame = self.image.shape[1]
         y_frame = self.image.shape[2]
@@ -86,7 +86,7 @@ class NetSurfBottom:
         self.ymax=ycol
         
         self.num_columns=points.shape[0]
-        
+               
         assert self.num_columns == self.ymax * self.xmax
        
         return points
@@ -148,10 +148,10 @@ class NetSurfBottom:
         
         If alpha != None this method will add an additional weighted flow edge (horizontal binary costs.
         '''
-        print(self.surfaces)
+        print('Number of Surfaces:', self.surfaces)
         self.num_nodes = self.surfaces*self.num_columns*self.K
         # estimated num edges (in case I'd have 4 num neighbors and full pencils)
-        #self.num_edges = ( self.num_nodes * 4 * (self.max_delta_k + self.max_delta_k+1) ) * .5
+        self.num_edges = ( self.num_nodes * 4 * (self.max_delta_k + self.max_delta_k+1) ) * .5
 
         self.g = maxflow.Graph[float]( self.num_nodes)
         self.nodes = self.g.add_nodes( self.num_nodes )
@@ -160,8 +160,8 @@ class NetSurfBottom:
         
         for s in range(self.surfaces):
             
-            c=s*self.num_columns
-            c_above=(s-1)*self.num_columns
+            c=s*self.num_columns*self.K
+            c_above=(s-1)*self.num_columns*self.K
             print('c',c)
 
             for i in range( self.num_columns ):
@@ -200,7 +200,6 @@ class NetSurfBottom:
                         if k < self.K - self.min_dist:
                             #introducing min intersurface distance
                             self.g.add_edge(c+i*self.K+k, c_above+i*self.K+self.min_dist, self.INF, 0)
-                        else: print('deficient')
                             
     def calculate_neighbors_of(self,point):
         '''
@@ -252,51 +251,27 @@ class NetSurfBottom:
     
     
     def give_surface_points( self):
-        myverts = np.zeros((self.num_columns,3))
-        for i in range(self.num_columns):
-            myverts[i] = self.get_surface_point(i)
-        return myverts
+        myverts = np.zeros((self.surfaces*self.num_columns,3))
+        for s in range(self.surfaces):
+            for i in range(s*self.num_columns, self.num_columns+s*self.num_columns):
+                    myverts[i] = self.get_surface_point(i,s)
+        return myverts        
             
-    def get_volume( self, calibration = (1.,1.,1.) ):
-        """
-        calibration: 3-tupel of pixel size multipliers
-        """
-        volume = 0.
-        for a,b,c in self.triangles:
-            pa = self.get_surface_point( a )
-            pb = self.get_surface_point( b )
-            pc = self.get_surface_point( c )    
-            volume += self.get_triangle_splinter_volume( pa, pb, pc, calibration )
-
-        return volume   
-         
-            
-    def get_surface_point( self, column_id ):
+    def get_surface_point( self, column_id, s ):
+        '''
+        For column_id in g, the last vertex that is still in S (of the s-t-cut) is determined.
+        Note, that column_id does not represent the respective array of voxels (if nx,ny != 1,1)
+        Note, that column_id does also not nessecarily represent the respective column of the base graph (if surfaces>1)
+        '''
         for k in range(self.K):
             if self.g.get_segment(column_id*self.K+k) == 1: break # leave as soon as k is first outside point
         k-=1
-        x = int(self.col_vectors[column_id,0])
-        y = int(self.col_vectors[column_id,1])
+        x = int(self.col_vectors[column_id-s*self.num_columns,0])
+        y = int(self.col_vectors[column_id-s*self.num_columns,1])
         z = int(self.min_dist_1 + (k-1)/float(self.K) * (self.max_dist_1-self.min_dist_1))
         return (x,y,z)
     
-    def get_triangle_splinter_volume( self, pa, pb, pc, calibration ):
-        """
-        Computes the volume of the pyramid defined by points pa, pb, pc, and self.center
-        """
-        assert not self.center is None
-        
-        x = (np.array(pa)-self.center) * calibration[0]
-        y = (np.array(pb)-self.center) * calibration[1]
-        z = (np.array(pc)-self.center) * calibration[2]
-        return math.fabs( x[0] * y[1] * z[2] + 
-                          x[1] * y[2] * z[0] + 
-                          x[2] * y[0] * z[1] - 
-                          x[0] * y[2] * z[1] - 
-                          x[1] * y[0] * z[2] - 
-                          x[2] * y[1] * z[0]) / 6.
-
-
+    
     '''
     VISUALISATION STUFF
     '''
@@ -308,6 +283,7 @@ class NetSurfBottom:
         y=self.ymax
         x=2*self.num_columns
         tris=np.zeros([x,3])
+        
         for i in range(self.num_columns-y):
             if (i+1) % y == 0:
                 continue
@@ -322,8 +298,8 @@ class NetSurfBottom:
 
         nonzero_row_indices =[i for i in range(tris.shape[0]) if not np.allclose(tris[i,:],0)]
         tris = tris[nonzero_row_indices,:] #taking remaining zeros out of tris
-        tris=tris.astype(int)
-        print(tris)
+        
+        tris=tris.astype(np.int)
         
         return tris
     
@@ -343,48 +319,59 @@ class NetSurfBottom:
         verts=verts
         tris = verts[faces]      
         n = -np.cross( tris[::,1 ] - tris[::,0]  , tris[::,2 ] - tris[::,0] )
+        n = abs(n)
         n=self.norm_vec(arr=n)
-        print('in get normals')
-        print(faces.shape)
-        print(verts.shape)
-        print(tris.shape)
-        print(n.shape)
         norm[ faces[:,0] ] += n
         norm[ faces[:,1] ] += n
         norm[ faces[:,2] ] += n
         norm=self.norm_vec(arr=norm)
-        print(faces[:,0])
         return norm[faces]
         
     def norm_coords(self,cabs,pixelsizes):
         """ 
         converts from absolute pixel location in image (x,y,z) to normalized [0,1] coordinates for spimagine meshes (z,y,x).
         """        
-        cnorm = 2. * np.array(cabs[::-1], float) / np.array(pixelsizes) - 1.
-        return tuple(cnorm[::-1])
-
-    def norm_radii(self,cabs,pixelsizes):
-        """ 
-        converts from absolute pixel based radii to normalized [0,1] coordinates for spimagine meshes (z,y,x).
-        """        
-        cnorm = 2. * np.array(cabs[::-1], float) / np.array(pixelsizes)
-        return tuple(cnorm[::-1])
+        cnorm = 2. * np.array(cabs, float) / np.array(pixelsizes) -1.
+        return tuple(cnorm)
     
-    
-    def create_surface_mesh( self, facecolor=(1.,.3,.2) ):
-        pixels=self.image.shape[1]*self.image.shape[2]
-        myverts = np.zeros((self.num_columns, 3))
-        x=np.zeros((self.num_columns,3))
-        myindices=self.get_triangles()
+    def create_surface_mesh( self, s, facecolor=(1.,.3,.2) ):
+        '''
+        Generates spimagine Mesh of the surface s
+        -surface vertices determined by get_surface_point
+        -indices that choose which vertices to triangulate given by get_triangles
+        '''
         
-        for i in range(self.num_columns):
-            p = self.get_surface_point(i)
-            myverts[i,:] = self.norm_coords( p, self.image.shape )
-            x[i]=p
-        mynormals=self.get_normals(myindices,x)
-        myverts=np.concatenate((myverts,myverts),axis=0)
-        print(myverts.shape)
-        print(myindices.shape)
-        print(mynormals.shape)
+        image_shape_xyz = (self.image.shape[1],self.image.shape[2], self.image.shape[0])
+        myverts = np.zeros((self.num_columns, 3))        
+        x=np.zeros((self.num_columns,3))
+        
+        myindices=self.get_triangles()
+        print(myindices)
+        print('indices shape', myindices.shape[0])
+        #verts=np.zeros((myindices.shape[0]*3,3))
+        
+        j=0        
+        for i in range(s*self.num_columns, self.num_columns+s*self.num_columns):
+            p = self.get_surface_point(i,s)
+            myverts[j,:] = self.norm_coords( p, image_shape_xyz )
+            x[j]=p
+            j+=1
+            
+        '''
+        k=0
+        for l in range(myindices.shape[0]):
+            for m in myindices[l]:
+                verts[k]=x[m]
+                print(verts[k])
+                verts[k]=self.norm_coords(verts[k],self.image.shape)
+                print(verts[k])
+                k+=1
+        '''
+        assert myverts.shape[0] == self.num_columns
+        mynormals=self.get_normals(myindices,myverts)
+        #myverts=np.concatenate((myverts,myverts),axis=0)
+        print('indices', myindices.shape)
+        print('verts', myverts.shape)
+        #print(mynormals.shape)
 
-        return Mesh(vertices=myverts, normals = mynormals, indices=myindices,  facecolor=facecolor, alpha=.5)
+        return Mesh(vertices=myverts, indices=myindices, normals=mynormals, facecolor=facecolor, alpha=.5)

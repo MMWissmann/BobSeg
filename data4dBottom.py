@@ -195,6 +195,8 @@ class Data4dBottom:
             self.images[i] = imread(filenames[i])
             if not self.silent:
                 print('Dimensions of frame', i, ': ', self.images[i].shape)
+                print(self.images[0].shape[0])
+                print(self.images[0].shape[1])
             
     # ***************************************************************************************************
     # *** VISUALISATION STUFF *** VISUALISATION STUFF *** VISUALISATION STUFF *** VISUALISATION STUFF ***
@@ -235,6 +237,16 @@ class Data4dBottom:
             x= netsurf.give_surface_points()
         return x
     
+    def get_segment(self,f,column_id):
+        for oid in range(len(self.object_names)):
+            netsurf=self.netsurfs[oid][f]
+            print(column_id)
+            segment=np.zeros(netsurf.K)
+            for k in range(netsurf.K):
+                s=netsurf.g.get_segment(column_id*netsurf.K+k)
+                segment[k]= s
+        return segment
+    
     def show_frame( self, f, show_surfaces=False, show_centers=False, stackUnits=[1.,1.,1.], raise_window=True ):
         assert f>=0 and f<len(self.images)
         
@@ -251,8 +263,10 @@ class Data4dBottom:
         for oid in range(len(self.object_names)):
             netsurf = self.netsurfs[oid][f]
             if not netsurf is None:
-                if show_surfaces: self.spimagine.glWidget.add_mesh( 
-                        netsurf.create_surface_mesh( facecolor=self.colors_diverse[0]) )
+                if show_surfaces: 
+                    for s in range(self.surfaces):
+                        print('s',s)
+                        self.spimagine.glWidget.add_mesh(netsurf.create_surface_mesh( s,facecolor=self.colors_diverse[0]) )
         return self.spimagine
     
     def hide_all_objects( self ):
@@ -260,7 +274,7 @@ class Data4dBottom:
             self.spimagine.glWidget.meshes.pop(0)
         self.spimagine.glWidget.refresh()
 
-    def show_objects( self, oids, show_surfaces=True, show_centers=True, colors=None ):
+    def show_objects( self, oids, show_surfaces=True, show_centers=False, colors=None ):
         assert not self.current_frame is None
         if colors is None:
             colors = self.colors_diverse
@@ -270,11 +284,12 @@ class Data4dBottom:
             assert oid>=0 and oid<len(self.object_names)
             netsurf = self.netsurfs[oid][self.current_frame]
             if not netsurf is None:
-                if show_centers:  self.spimagine.glWidget.add_mesh( 
-                        netsurf.create_center_mesh( facecolor=colors[i%len(colors)]) )
-                if show_surfaces: self.spimagine.glWidget.add_mesh( 
-                        netsurf.create_surface_mesh( facecolor=colors[i%len(colors)]) )
-                i += 1
+                for s in range(self.surfaces):
+                    if show_centers:  self.spimagine.glWidget.add_mesh( 
+                            netsurf.create_center_mesh( facecolor=colors[i%len(colors)]) )
+                    if show_surfaces: self.spimagine.glWidget.add_mesh( 
+                            netsurf.create_surface_mesh( s,facecolor=colors[i%len(colors)]) )
+                    i += 1
                 
     def save_current_visualization( self, filename ):
         self.spimagine.saveFrame( filename )

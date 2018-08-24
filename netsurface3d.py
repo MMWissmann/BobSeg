@@ -3,7 +3,7 @@ import bresenham as bham
 import maxflow
 import math
 
-#from spimagine import EllipsoidMesh, Mesh
+from spimagine import EllipsoidMesh, Mesh
 
 class NetSurf3d:
     """

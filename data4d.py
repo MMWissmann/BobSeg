@@ -5,8 +5,8 @@ import math
 from tifffile import imread, imsave
 import _pickle as pickle
 
-#from spimagine import volfig, volshow
-#from spimagine import EllipsoidMesh, Mesh
+from spimagine import volfig, volshow
+from spimagine import EllipsoidMesh, Mesh
 
 from netsurface3d import NetSurf3d
 
