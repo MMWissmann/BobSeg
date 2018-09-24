@@ -160,8 +160,8 @@ class NetSurfBottom:
         
         for s in range(self.surfaces):
             
-            c=s*self.num_columns*self.K
-            c_above=(s-1)*self.num_columns*self.K
+            c=s*self.num_columns*self.K #total number of nodes already added with the surfaces above
+            c_above=(s-1)*self.num_columns*self.K #not relevant for surface 1 (s=0)
             print('c',c)
 
             for i in range( self.num_columns ):
@@ -185,21 +185,21 @@ class NetSurfBottom:
                             self.g.add_edge(c+i*self.K+k, c+j*self.K+k2, self.INF, 0)
                             if alpha != None:
                                 # add constant cost penalty \alpha
-                                self.g.add_edge(c+i*self.K+k, c+j*self.K+k, alpha, 0)    
+                                self.g.add_edge(c+i*self.K+k, c+j*self.K+k2, alpha, 0)    
                         else: continue
                 
                 # create intersurface connections, if more than one surface
-                if 0 < s <= self.surfaces-1:
+                if 0 < s:
                     if i==0:
                         #making sure that base set is strongly connected
                         self.g.add_edge(c_above, c, self.INF,0)
                     for k in range(self.K):
-                        if k >= self.max_dist:
-                            #introducing max intersurface distance
-                            self.g.add_edge(c_above+i*self.K+k, c+i*self.K-self.max_dist, self.INF, 0)
-                        if k < self.K - self.min_dist:
-                            #introducing min intersurface distance
-                            self.g.add_edge(c+i*self.K+k, c_above+i*self.K+self.min_dist, self.INF, 0)
+                        #introducing max intersurface distance
+                        k2 = max(0,k-self.max_dist)
+                        self.g.add_edge(c_above+i*self.K+k, c+i*self.K+k2, self.INF, 0)
+                        #introducing min intersurface distance
+                        k3 = min(self.K,k+self.min_dist)
+                        self.g.add_edge(c+i*self.K+k, c_above+i*self.K+k3, self.INF, 0)
                             
     def calculate_neighbors_of(self,point):
         '''

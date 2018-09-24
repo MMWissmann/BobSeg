@@ -70,6 +70,7 @@ class Data4dBottom:
         self.divx = divx
         self.divy = divy
         self.min=min_dist
+        print('min dist', self.min)
         self. max=max_dist
         self.surfaces=s
         
