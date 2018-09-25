@@ -46,12 +46,13 @@ class Data4dBottom:
     colors_darkblue = [(.1,.3,1.0-.1*i) for i in range(6)]
     colors_diverse = [ colors_green[0], colors_red[0], colors_blue[0], colors_gold[0], colors_yellow[0],colors_grey[1] ]
     
-    def __init__( self, filenames, pixelsize=None, silent=True ):
+    def __init__( self, filenames, pixelsize=None, silent=True, plane=None ):
         """
         Parameters:
             filenames   -  list of filenames (one per time point)
             pixelsize   -  calibration, eg. for volume computation
             silent      -  if True, no (debug/info) outputs will be printed on stdout
+            plane       -  if True, additional plane on top and bottom will be added with average intensity of whole image
         """
         self.silent = silent
         self.filenames = filenames
@@ -59,6 +60,7 @@ class Data4dBottom:
         
         # load images
         self.load_from_files( self.filenames )
+        if not plane is None: self.add_plane()
 
     # ***********************************************************************************************
     # *** SEGMENTATION STUFF *** SEGMENTATION STUFF *** SEGMENTATION STUFF *** SEGMENTATION STUFF ***
@@ -70,7 +72,6 @@ class Data4dBottom:
         self.divx = divx
         self.divy = divy
         self.min=min_dist
-        print('min dist', self.min)
         self. max=max_dist
         self.surfaces=s
         
@@ -199,6 +200,13 @@ class Data4dBottom:
                 print(self.images[0].shape[0])
                 print(self.images[0].shape[1])
             
+    def add_plane(self):
+        av=np.average(self.images[0])
+        plane=np.full((self.images[0].shape[1],self.images[0].shape[2]),av)
+        self.images[0]=np.insert(self.images[0],0,plane,axis=0)
+        self.images[0]=np.append(self.images[0],[plane],axis=0)
+        print(self.images[0].shape)
+        
     # ***************************************************************************************************
     # *** VISUALISATION STUFF *** VISUALISATION STUFF *** VISUALISATION STUFF *** VISUALISATION STUFF ***
     # ***************************************************************************************************

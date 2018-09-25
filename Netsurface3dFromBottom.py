@@ -84,11 +84,12 @@ class NetSurfBottom:
              
         self.xmax=xcol
         self.ymax=ycol
-        
+        #points = np.array(points)
+        #points = points-1
         self.num_columns=points.shape[0]
                
         assert self.num_columns == self.ymax * self.xmax
-       
+        
         return points
     
     def apply_to(self, image, max_dist_1, min_dist_1=0):        
@@ -265,17 +266,28 @@ class NetSurfBottom:
         '''
         for k in range(self.K):
             if self.g.get_segment(column_id*self.K+k) == 1: break # leave as soon as k is first outside point
-        k-=1
+        #k-=1
         x = int(self.col_vectors[column_id-s*self.num_columns,0])
         y = int(self.col_vectors[column_id-s*self.num_columns,1])
-        z = int(self.min_dist_1 + (k-1)/float(self.K) * (self.max_dist_1-self.min_dist_1))
+        #z = int(self.min_dist_1 + (k-1)/float(self.K) * (self.max_dist_1-self.min_dist_1))
+        z = int(self.min_dist_1 + (k+1)/float(self.K) * (self.max_dist_1-self.min_dist_1))
         return (x,y,z)
-    
     
     '''
     VISUALISATION STUFF
     '''
-
+    '''
+    def show_profile(self,dim,coord):
+        
+        
+        
+        if dim==0:
+            plt.plot(self.image[coord,::])
+        elif dim==1:
+            plt.plot(self.image[:,coord,:])
+        else: plt.plot(self.image[::,coord])
+    '''
+    
     def get_triangles(self):
         '''
         returns array of indices of three columns for triangulation of surface mesh
@@ -294,7 +306,7 @@ class NetSurfBottom:
             if (i) % y == 0:
                 continue
             else:
-                tris[self.num_columns+i]=[int(i),int(i-1),int(i-y)]
+                tris[self.num_columns+i]=[int(i),int(i-y),int(i-1)]
 
         nonzero_row_indices =[i for i in range(tris.shape[0]) if not np.allclose(tris[i,:],0)]
         tris = tris[nonzero_row_indices,:] #taking remaining zeros out of tris
@@ -310,13 +322,19 @@ class NetSurfBottom:
         arr[:,1] /= lens
         arr[:,2] /= lens                
         return arr
+   
+    def norm_radii(self,cabs,pixelsizes):
+        """ 
+        converts from absolute pixel based radii to normalized [0,1] coordinates for spimagine meshes (z,y,x).
+        """        
+        cnorm = 2. * np.array(cabs[::-1], float) / np.array(pixelsizes)
+        return tuple(cnorm[::-1])
     
     def get_normals(self,faces,verts):
         '''
         get normal vectors for spimagine mesh generation
         '''
         norm = np.zeros( verts.shape, dtype=verts.dtype )
-        verts=verts
         tris = verts[faces]      
         n = -np.cross( tris[::,1 ] - tris[::,0]  , tris[::,2 ] - tris[::,0] )
         n = abs(n)
@@ -346,32 +364,32 @@ class NetSurfBottom:
         x=np.zeros((self.num_columns,3))
         
         myindices=self.get_triangles()
-        print(myindices)
-        print('indices shape', myindices.shape[0])
-        #verts=np.zeros((myindices.shape[0]*3,3))
+        verts=np.zeros((myindices.shape[0]*3,3))
         
-        j=0        
+        j=0  
+        
         for i in range(s*self.num_columns, self.num_columns+s*self.num_columns):
             p = self.get_surface_point(i,s)
             myverts[j,:] = self.norm_coords( p, image_shape_xyz )
             x[j]=p
             j+=1
             
-        '''
+        
         k=0
-        for l in range(myindices.shape[0]):
-            for m in myindices[l]:
+        for l in myindices:
+            for m in l:
                 verts[k]=x[m]
-                print(verts[k])
-                verts[k]=self.norm_coords(verts[k],self.image.shape)
-                print(verts[k])
+                verts[k]=self.norm_coords(verts[k],image_shape_xyz)
                 k+=1
-        '''
+        
         assert myverts.shape[0] == self.num_columns
         mynormals=self.get_normals(myindices,myverts)
+        mynormals=self.norm_radii(mynormals,image_shape_xyz)
         #myverts=np.concatenate((myverts,myverts),axis=0)
         print('indices', myindices.shape)
-        print('verts', myverts.shape)
         #print(mynormals.shape)
+        ind=np.arange(0,3*myindices.shape[0])
+        indices=ind.tolist()
+        print(len(indices))
 
-        return Mesh(vertices=myverts, indices=myindices, normals=mynormals, facecolor=facecolor, alpha=.5)
+        return Mesh(vertices=verts, indices=indices, normals=mynormals, facecolor=facecolor, alpha=.5)
