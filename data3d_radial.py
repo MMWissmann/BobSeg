@@ -10,11 +10,11 @@ from matplotlib.patches import Ellipse
 from matplotlib.patches import Polygon
 
 import bresenham as bham
-from netsurface2d import NetSurf2d
-from netsurface2dt import NetSurf2dt
+from netsurface2d_radial import NetSurf2dRadial
+from netsurface2dt_radial import NetSurf2dtRadial
 
 
-class Data3d:
+class Data3dRadial:
     """
     Implements a container to hold 2d+t (3d) time-lapse datasets.
     Time points in such datasets can conveniently be segmented via NetSurface2d.
@@ -148,7 +148,7 @@ class Data3d:
             print('LAZY INIT NETSURFS')
             self.netsurfs[oid] = [None] * len(self.images)
         
-        self.netsurfs[oid][f] = NetSurf2d(self.num_columns, K=self.K, max_delta_k=self.max_delta_k)
+        self.netsurfs[oid][f] = NetSurf2dRadial(self.num_columns, K=self.K, max_delta_k=self.max_delta_k)
         optimum = self.netsurfs[oid][f].apply_to(self.images[f], 
                                                  self.object_seedpoints[oid][f], 
                                                  self.object_max_surf_dist[oid][f], 
@@ -165,7 +165,7 @@ class Data3d:
         Segments entire time series using NetSurf2dt (increases temporal consistency)
         Note: changes self.object_areas!
         '''
-        self.netsurf2dt[oid] = NetSurf2dt(self.num_columns, 
+        self.netsurf2dt[oid] = NetSurf2dtRadial(self.num_columns, 
                                           K=self.K, 
                                           max_delta_k_xy=self.max_delta_k, 
                                           max_delta_k_t=max_radial_delta)

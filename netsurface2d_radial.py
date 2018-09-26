@@ -17,7 +17,7 @@ def sample_circle( n=18 ):
         
     return points
 
-class NetSurf2d:
+class NetSurf2dRadial:
     """
     Implements a 2d version of the optimal net surface problem.
     Relevant publication: [Wu & Chen 2002]
