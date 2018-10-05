@@ -3,7 +3,9 @@ import bresenham as bham
 import maxflow
 import math
 
+from scipy.spatial import Delaunay
 from spimagine import EllipsoidMesh, Mesh
+import matplotlib.pyplot as plt
 
 class NetSurf3d:
     """
@@ -27,7 +29,7 @@ class NetSurf3d:
     g = None
     maxval = None
     
-    def __init__(self, K=50, max_delta_k=4, dx=1, dy=1, surfaces=1, min_dist=0, max_dist=20):
+    def __init__(self, K=50, max_delta_k=4, dx=1, dy=1, surfaces=1, min_dist=0, max_dist=50):
         """
         Parameters:
             K           -  how many sample points per column
@@ -43,17 +45,47 @@ class NetSurf3d:
         self.min_dist = min_dist
         self.max_dist = max_dist
         self.surfaces = surfaces
+    
+    def apply_to(self, image, max_col_height, min_col_height=0, mask=None, plot_base_graph=False):  
+        '''
+        image: input 3d image
+        max_col_height / min_col_height: maximal and minimal z coordinate at which a surface is expected
+        mask: optional input of 2d image to be used to select coordinates for base graph generation with:   
+                1. same (x,y) dimensions as original 3d image,
+                2. only 1 or 0 as pixel values
+        '''
+        assert( len(image.shape) == 3 )
+        if max_col_height > image.shape[0]:
+            max_col_height = image.shape[0]
+            print('maximal column height exceeds image boundary, set to', max_col_height)
+            print('object expected between %d and' %(min_col_height), max_col_height)
         
+        self.image = image
+        self.min_col_height = min_col_height
+        self.max_col_height = max_col_height
+        
+        self.base_coords = self.base_points(self.dx, self.dy, mask)
+        self.neighbors = self.neighbors(mask,plot_base_graph)
+                                        
+        print('Number of columns:', self.num_columns)
+        
+        self.compute_weights()
+        self.build_flow_network()
+        
+        self.maxval = self.g.maxflow()
+        return self.maxval
+    
     def base_points(self, dx, dy, mask=None):
         """
         choose every dxth point in x-direction (dyth point in y-direction) to be vertex on base graph
         returns (x,y) coordinates of these vertices
-           self.num_columns: total number of columns/ total number of vertices in base graph
+        self.num_columns: total number of columns/ total number of vertices in base graph
         """ 
-        if not mask is None: assert(self.image.shape[1,2] == mask.shape)
+        if not mask is None: 
+            assert(self.image[0].shape == mask.shape)
         
-        image_length_x = self.image.shape[1]
-        image_length_y = self.image.shape[2]
+        image_length_x = self.image.shape[2]
+        image_length_y = self.image.shape[1]
         
         points = []
         
@@ -76,47 +108,76 @@ class NetSurf3d:
         self.num_columns=len(points)
         
         self.num_base_y=int(image_length_y/dy)
+        self.num_base_x=int(image_length_x/dx)
         
         return np.array(points)
                                 
     def mask_pixel_value(self,mask,pixel):
+        
         try:
-            m = mask[pixel]
+            m = mask[pixel[::-1]]
+            if m == 1: return True
+            elif m == 0: return False
         except:
             None
         
-        assert m==1 or m==0
-        
-        if m == 1: return True
-        elif m == 0: return False
-    
-    def apply_to(self, image, max_col_height, min_col_height=0, mask=None):  
+    def neighbors(self,mask,plot_base_graph=False):
         '''
-        image: input 3d image
-        max_col_height / min_col_height: maximal and minimal z coordinate at which a surface is expected
-        mask: optional input of 2d image to be used to select coordinates for base graph generation with:   
-                1. same (x,y) dimensions as original 3d image,
-                2. only 1 or 0 as pixel values
+        Perform Delaunay triangulation with base graph coordinates in order to find neighbored columns
+        Returns adjacency list --> Array of neighboring vertices of vertex k is: self.neighbors[k] 
         '''
-        assert( len(image.shape) == 3 )
-        if max_col_height > image.shape[0]:
-            max_col_height = image.shape[0]
-            print('maximal column height exceeds image boundary, set to', max_col_height)
-            print('object expected between %d and' %(min_col_height), max_col_height)
+        tri = Delaunay(self.base_coords)
         
-        self.image = image
-        self.min_col_height = min_col_height
-        self.max_col_height = max_col_height
+        if plot_base_graph is not False:
+            plt.triplot(self.base_coords[:,0], self.base_coords[:,1], tri.simplices.copy())
+            plt.plot(self.base_coords[:,0], self.base_coords[:,1], 'o')
+            plt.show()
         
-        self.base_coords = self.base_points(self.dx, self.dy, mask)
-                                        
-        print('Number of columns:', self.num_columns)
+        triangles = tri.simplices
         
-        self.compute_weights()
-        self.build_flow_network()
+        #produce adjacency list
+        neighbors = {}
         
-        self.maxval = self.g.maxflow()
-        return self.maxval
+        for point in range(self.num_columns):
+            neighbors[point] = []
+
+        for simplex in tri.simplices:
+            neighbors[simplex[0]] += [simplex[1],simplex[2]]
+            neighbors[simplex[1]] += [simplex[2],simplex[0]]
+            neighbors[simplex[2]] += [simplex[0],simplex[1]]
+        
+        #remove doubles and sort by value
+        for a in range(len(neighbors)):
+            neighbors[a]=list(set(neighbors[a]))
+            neighbors[a]=np.sort(neighbors[a])
+        
+        remove_triangles=[]
+        
+        #remove edges that connect through 0-part of mask (allowing non-convex shapes of the base graph)
+        if mask is None:
+            self.triangles=triangles
+        else:
+            for a in range(len(neighbors)):
+                k=-1
+                for n in neighbors[a]:
+                    k+=1
+                    from_xy = np.array([[int(self.base_coords[a,0]),int(self.base_coords[a,1])]])
+                    to_xy = np.array([[int(self.base_coords[n,0]),int(self.base_coords[n,1])]])
+                    line = bham.bresenhamline(from_xy,to_xy)
+                    num_pixels = len(line)
+                    for coord in line:
+                        pix = self.mask_pixel_value(mask,tuple(coord))
+                        if pix is False:
+                            neighbors[a]=np.delete(neighbors[a],k)
+                            remove_triangles.append((a,n))
+                            k-=1
+                            break
+            remove_triangles=np.array(remove_triangles)
+        
+            #remove triangles from tri.simplices where at least one edge connects through 0-part of mask for visualisation
+            self.triangles=self.spim_tris(triangles,remove_triangles)
+                    
+        return neighbors
     
     def compute_weights(self):        
         assert not self.image is None
@@ -133,6 +194,8 @@ class NetSurf3d:
                 start = int(k * float(num_pixels)/self.K)
                 end = max( start+1, start + int(num_pixels/self.K) )
                 self.w[i,k] = -1 * self.compute_weight_at(coords[start:end])
+                
+        #self.w=self.w[:,::-1]
             
         for i in range(self.num_columns):
             self.w_tilde[i,0] = self.w[i,0] 
@@ -147,8 +210,7 @@ class NetSurf3d:
         for c in coords:
             try:
                 m = max( m,self.image[ tuple(c[::-1]) ] )
-            except:
-                None
+            except: None
         return m
     
     def build_flow_network( self, alpha=None):
@@ -161,12 +223,10 @@ class NetSurf3d:
         print('Number of Surfaces:', self.surfaces)
         self.num_nodes = self.surfaces*self.num_columns*self.K
         # estimated num edges (in case I'd have 4 num neighbors and full pencils)
-        self.num_edges = ( self.num_nodes * 4 * (self.max_delta_k + self.max_delta_k+1) ) * .5
+        #self.num_edges = ( self.num_nodes * 4 * (self.max_delta_k + self.max_delta_k+1) ) * .5
 
         self.g = maxflow.Graph[float]( self.num_nodes)
         self.nodes = self.g.add_nodes( self.num_nodes )
-        
-        NoneType = type(None)
         
         for s in range(self.surfaces):
             
@@ -189,14 +249,12 @@ class NetSurf3d:
 
                 # connect column to neighbors
                 for k in range(self.K):
-                    for j in self.calculate_neighbors_of(i):
-                        if not isinstance(j,NoneType):
-                            k2 = max(0,k-self.max_delta_k)
-                            self.g.add_edge(c+i*self.K+k, c+j*self.K+k2, self.INF, 0)
-                            if alpha != None:
-                                # add constant cost penalty \alpha
-                                self.g.add_edge(c+i*self.K+k, c+j*self.K+k2, alpha, 0)    
-                        else: continue
+                    for j in self.neighbors[i]:
+                        k2 = max(0,k-self.max_delta_k)
+                        self.g.add_edge(c+i*self.K+k, c+j*self.K+k2, self.INF, 0)
+                        if alpha != None:
+                            # add constant cost penalty \alpha
+                            self.g.add_edge(c+i*self.K+k, c+j*self.K+k2, alpha, 0)    
                 
                 # create intersurface connections, if more than one surface
                 if 0 < s:
@@ -210,44 +268,7 @@ class NetSurf3d:
                         #introducing min intersurface distance
                         k3 = min(self.K,k+self.min_dist)
                         self.g.add_edge(c+i*self.K+k, c_above+i*self.K+k3, self.INF, 0)
-                            
-    def calculate_neighbors_of(self,point):
-        '''
-        Determine the column-id's of the 2,3, or 4 neighboring columns of point
-        Will be called by build_flow_network()
-        '''
-        neighbors_of = np.zeros([4])
-        y=self.num_base_y
-        a = point +1
-        b = point -1
-        c = point +y
-        d = point -y
-        if not ( ( point % y == 0 ) or ( (point +1) % y == 0 ) ):
-            if not ( point < y or point > (self.num_columns - y) ):
-                neighbors_of=[a,b,c,d]
-            elif point < y:
-                neighbors_of=[a,b,c, None]
-            elif point > (self.num_columns - y):
-                neighbors_of=[a,b,d, None]
-            else:
-                print("sth went wrong in determining neighbors of", point)
-        elif point == 0:
-            neighbors_of=[a,c, None, None]
-        elif point % y == 0 and not point == 0:
-            if point == self.num_columns - y:
-                neighbors_of=[a,d, None, None]
-            else:
-                neighbors_of=[a,c,d, None]
-        elif (point +1) % y == 0:
-            if point + 1 == y:
-                neighbors_of=[b,c, None, None]
-            elif point +1 == self.num_columns:
-                neighbors_of=[b,d, None, None]
-            else:
-                neighbors_of=[b,c,d, None]
-        else: print("error in calculate_neighbors_of", point)
-        return neighbors_of
-
+                           
     def get_counts( self ):
         size_s_comp = 0
         size_t_comp = 0
@@ -259,18 +280,18 @@ class NetSurf3d:
                 size_t_comp += 1
         return size_s_comp, size_t_comp
     
-    
     def give_surface_points( self):
-        myverts = np.zeros((self.surfaces*self.num_columns,3))
+        myverts = []
         for s in range(self.surfaces):
             for i in range(s*self.num_columns, self.num_columns+s*self.num_columns):
-                    myverts[i] = self.get_surface_point(i,s)
-        return myverts        
+                    myverts.append(self.get_surface_point(i,s))
+        
+        return np.array(myverts)        
             
     def get_surface_point( self, column_id, s ):
         '''
         For column_id in g, the last vertex that is still in S (of the s-t-cut) is determined.
-        Note, that column_id does not represent the respective array of voxels (if nx,ny != 1,1)
+        Note, that column_id does not represent the respective array of voxels (if dx,dy != 1,1)
         Note, that column_id does also not nessecarily represent the respective column of the base graph (if surfaces>1)
         '''
         for k in range(self.K):
@@ -284,30 +305,17 @@ class NetSurf3d:
     '''
     VISUALISATION STUFF
     '''
-
-    def get_triangles(self):
-        '''
-        returns array of indices of three columns for triangulation of surface mesh
-        '''
-        y=self.num_base_y
-        tris=[]
-        
-        for i in range(self.num_columns-y):
-            if (i+1) % y == 0:
-                continue
-            else:
-                tris.append((int(i),int(i+1),int(i+y)))
-        
-        for i in range(y,self.num_columns):
-            if (i) % y == 0:
-                continue
-            else:
-                tris.append((int(i),int(i-y),int(i-1)))
-                
-        tris=np.array(tris)
-        tris=tris.astype(np.int)
-        
-        return tris
+    
+    def spim_tris(self,triangles,remove_tris):
+        '''delete triangles from delaunay-produced array that cover areas outside of mask'''
+        k=-1
+        for t in range(len(triangles)):
+            k+=1
+            for r in remove_tris:
+                if any(np.isin(triangles[k],r[0])) and any(np.isin(triangles[k],r[1])):
+                    triangles=np.delete(triangles,k,0)
+                    k-=1
+        return triangles
     
     def norm_vec(self,arr):
         ''' Normalize a numpy array of 3 component vectors shape=(n,3) '''
@@ -316,22 +324,16 @@ class NetSurf3d:
         arr[:,1] /= lens
         arr[:,2] /= lens                
         return arr
-   
-    def norm_radii(self,cabs,pixelsizes):
-        """ 
-        converts from absolute pixel based radii to normalized [0,1] coordinates for spimagine meshes (z,y,x).
-        """        
-        cnorm = 2. * np.array(cabs[::-1], float) / np.array(pixelsizes)
-        return tuple(cnorm[::-1])
     
     def get_normals(self,faces,verts):
         '''
         get normal vectors for spimagine mesh generation
         '''
         norm = np.zeros( verts.shape, dtype=verts.dtype )
-        tris = verts[faces]      
-        n = -np.cross( tris[::,1 ] - tris[::,0]  , tris[::,2 ] - tris[::,0] )
-        n = abs(n)
+        print(verts.shape)
+        print(faces.shape)
+        tris = verts[faces]     
+        n = np.cross( tris[::,1 ] - tris[::,0]  , tris[::,2 ] - tris[::,0] )
         n=self.norm_vec(arr=n)
         norm[ faces[:,0] ] += n
         norm[ faces[:,1] ] += n
@@ -342,53 +344,57 @@ class NetSurf3d:
     def norm_coords(self,cabs,pixelsizes):
         """ 
         converts from absolute pixel location in image (x,y,z) to normalized [0,1] coordinates for spimagine meshes (z,y,x).
+        performs translation operation for the mesh, so that every vertex is in the middle of the respective voxel
         """        
-        cnorm = 2. * np.array(cabs, float) / np.array(pixelsizes) -1.
+        cnorm = 2. * np.array(cabs, float) / np.array(pixelsizes) -1.  
+        
+        num_grid_z=min(self.K,self.image.shape[0])
+        cnorm[0]+=1/self.num_base_x
+        cnorm[1]+=1/self.num_base_y
+        cnorm[2]+=3/num_grid_z
+        
         return tuple(cnorm)
     
-    def create_surface_mesh( self, s, facecolor=(1.,.3,.2) ):
+    def create_surface_mesh( self, s, facecolor=(1.,.3,.2), export=False ):
         '''
         Generates one spimagine Mesh of the surface s
-        -surface vertices determined by get_surface_point
-        -indices that choose which vertices to triangulate given by get_triangles
+        -surface vertices determined by get_surface_point()
+        -indices that choose which vertices to triangulate given by self.triangles in neighbors()
         '''
         
-        image_shape_xyz = (self.image.shape[1],self.image.shape[2], self.image.shape[0])
-        myverts = np.zeros((self.num_columns, 3))        
-        x=np.zeros((self.num_columns,3))
+        image_shape_xyz = (self.image.shape[2],self.image.shape[1], self.image.shape[0]) 
+        xyz=np.zeros((self.num_columns,3))
         
-        myindices=self.get_triangles()
+        myindices=self.triangles
         verts=np.zeros((myindices.shape[0]*3,3))
         
         j=0  
-        
         for i in range(s*self.num_columns, self.num_columns+s*self.num_columns):
-            p = self.get_surface_point(i,s)
-            myverts[j,:] = self.norm_coords( p, image_shape_xyz )
-            x[j]=p
+            xyz[j]=self.get_surface_point(i,s)
             j+=1
-            
-        
+                    
         k=0
         for l in myindices:
             for m in l:
-                verts[k]=x[m]
+                verts[k]=xyz[m]
                 verts[k]=self.norm_coords(verts[k],image_shape_xyz)
                 k+=1
         
-        assert myverts.shape[0] == self.num_columns
-        #mynormals=self.get_normals(myindices,myverts)
-        #myverts=np.concatenate((myverts,myverts),axis=0)
-        print('myindices', myindices.shape)
-        #print(mynormals.shape)
         ind=np.arange(0,3*myindices.shape[0])
-        print('ind', ind.shape)
-        print('myverts', myverts.shape)
-        print('verts', verts.shape)
-        mynormals=self.get_normals(myindices,myverts)
-        print('normals', mynormals.shape)
-        mynormals=self.norm_radii(mynormals,image_shape_xyz)
+        mynormals=self.get_normals(myindices,xyz)
         indices=ind.tolist()
-        print(len(indices))
+        
+        if export is not False:
+            self.save_surface(s,xyz,myindices,mynormals)
 
         return Mesh(vertices=verts, indices=indices, normals=mynormals, facecolor=facecolor, alpha=.5)
+    
+    def save_surface(self,surface,vertices,indices,normals):
+        filename_surface = "surface_" + str(surface) + ".obj"
+        fh=open(filename_surface,"w")
+        
+        for v in vertices:
+            print(v)
+            fh.write('v ' + str(v[0]) + ' ' + str(v[1]) + ' ' + str(v[2]) +'\n')
+        for i in indices:
+            fh.write('f ' + str(i[0]) + ' ' + str(i[1]) + ' ' + str(i[2]) +'\n')

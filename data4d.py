@@ -4,6 +4,7 @@ import maxflow
 import math
 from tifffile import imread, imsave
 import _pickle as pickle
+from PIL import Image
 
 from spimagine import volfig, volshow
 from spimagine import EllipsoidMesh, Mesh
@@ -103,7 +104,7 @@ class Data4d:
                 return i
         return -1
         
-    def add_object_at ( self, oid, min_surf_dist, max_surf_dist, frame, frame_to=None, segment_it=False ):
+    def add_object_at ( self, oid, min_surf_dist, max_surf_dist, frame, frame_to=None, segment_it=False, plot_base_graph=False ):
         """
         Makes a given (already added) object exist at a frame (or a sequence of consecutive frames).
         Parameters:
@@ -131,9 +132,9 @@ class Data4d:
                 print('Added appearance for "'+str(self.object_names[oid])+ \
                       '" in frame', i)
             if segment_it: 
-                self.segment_frame( oid, i )
+                self.segment_frame( oid, i, plot_base_graph )
     
-    def segment_frame( self, oid, f ):
+    def segment_frame( self, oid, f, plot_base_graph ):
         """
         Segments object oid in frame f.
         """
@@ -153,7 +154,8 @@ class Data4d:
         optimum = self.netsurfs[oid][f].apply_to(self.images[f], 
                                                  self.object_max_surf_dist[oid][f], 
                                                  self.object_min_surf_dist[oid][f],
-                                                 mask)
+                                                 mask,
+                                                 plot_base_graph)
         if not self.silent:
             print('      Optimum energy: ', optimum)
             ins, outs = self.netsurfs[oid][f].get_counts()
@@ -204,14 +206,19 @@ class Data4d:
         for i in range(len(filenames)):
             self.images[i] = imread(filenames[i])
             if not self.silent:
-                print('Dimensions of frame', i, ': ', self.images[i].shape)
+                print('Dimensions (z,y,x) of frame', i, ': ', self.images[i].shape)
                 
     def load_from_files_mask( self, mask_names ):
         self.mask = [None]*len(mask_names)
         for i in range(len(mask_names)):
+            image_obj = Image.open(mask_names[i])
+            #rotated_image = image_obj.transpose(Image.FLIP_LEFT_RIGHT)
+            #rotated_image = image_obj.transpose(Image.FLIP_TOP_BOTTOM)
+            #rotated_image.save('/Users/wissmann/BobSeg/rotated_mask.tif')
+            #self.mask[i] = imread('/Users/wissmann/BobSeg/rotated_mask.tif')
             self.mask[i] = imread(mask_names[i])
             if not self.silent:
-                print('Dimensions of mask', i, ': ', self.mask[i].shape)
+                print('Dimensions (z,y,x) of mask', i, ': ', self.mask[i].shape)
             
     def add_plane(self):
         av=np.average(self.images[0])
@@ -269,7 +276,7 @@ class Data4d:
                 segment[k]= s
         return segment
     
-    def show_frame( self, f, show_surfaces=False, show_centers=False, stackUnits=[1.,1.,1.], raise_window=True ):
+    def show_frame( self, f, show_surfaces=False, show_centers=False, stackUnits=[1.,1.,1.], raise_window=True, export=False ):
         assert f>=0 and f<len(self.images)
         
         self.current_frame = f
@@ -288,7 +295,7 @@ class Data4d:
                 if show_surfaces: 
                     for s in range(self.surfaces):
                         print('s',s)
-                        self.spimagine.glWidget.add_mesh(netsurf.create_surface_mesh( s,facecolor=self.colors_diverse[0]) )
+                        self.spimagine.glWidget.add_mesh(netsurf.create_surface_mesh( s,facecolor=self.colors_diverse[0],export=export) )
         return self.spimagine
     
     def hide_all_objects( self ):
