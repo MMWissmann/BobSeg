@@ -4,7 +4,6 @@ import maxflow
 import math
 from tifffile import imread, imsave
 import _pickle as pickle
-from PIL import Image
 
 from spimagine import volfig, volshow
 from spimagine import EllipsoidMesh, Mesh
@@ -276,7 +275,7 @@ class Data4d:
                 segment[k]= s
         return segment
     
-    def show_frame( self, f, show_surfaces=False, show_centers=False, stackUnits=[1.,1.,1.], raise_window=True, export=False ):
+    def show_frame( self, f, show_surfaces=False, show_centers=False, stackUnits=[1.,1.,1.], raise_window=True, export=False, stitch=False ):
         assert f>=0 and f<len(self.images)
         
         self.current_frame = f
@@ -296,6 +295,10 @@ class Data4d:
                     for s in range(self.surfaces):
                         print('s',s)
                         self.spimagine.glWidget.add_mesh(netsurf.create_surface_mesh( s,facecolor=self.colors_diverse[0],export=export) )
+                if not stitch is False:
+                    for s in range(self.surfaces-1):
+                        print('stitching surfaces: ', s, s+1)
+                        self.spimagine.glWidget.add_mesh(netsurf.create_stitching_mesh( s,facecolor=self.colors_diverse[0],export=export) )
         return self.spimagine
     
     def hide_all_objects( self ):

@@ -7,6 +7,8 @@ from scipy.spatial import Delaunay
 from spimagine import EllipsoidMesh, Mesh
 import matplotlib.pyplot as plt
 
+from stitch_surfaces import StitchSurfaces
+
 class NetSurf3d:
     """
     Implements the optimal net surface problem for multiple surfaces.
@@ -330,8 +332,6 @@ class NetSurf3d:
         get normal vectors for spimagine mesh generation
         '''
         norm = np.zeros( verts.shape, dtype=verts.dtype )
-        print(verts.shape)
-        print(faces.shape)
         tris = verts[faces]     
         n = np.cross( tris[::,1 ] - tris[::,0]  , tris[::,2 ] - tris[::,0] )
         n=self.norm_vec(arr=n)
@@ -355,7 +355,7 @@ class NetSurf3d:
         
         return tuple(cnorm)
     
-    def create_surface_mesh( self, s, facecolor=(1.,.3,.2), export=False ):
+    def create_surface_mesh( self, s, facecolor=(1.,.3,.2), export=False):
         '''
         Generates one spimagine Mesh of the surface s
         -surface vertices determined by get_surface_point()
@@ -372,6 +372,11 @@ class NetSurf3d:
         for i in range(s*self.num_columns, self.num_columns+s*self.num_columns):
             xyz[j]=self.get_surface_point(i,s)
             j+=1
+            
+        if s == 0:
+            self.vertices=xyz
+        else:
+            self.vertices=np.stack((self.vertices,xyz))
                     
         k=0
         for l in myindices:
@@ -384,17 +389,52 @@ class NetSurf3d:
         mynormals=self.get_normals(myindices,xyz)
         indices=ind.tolist()
         
-        if export is not False:
+        if not export is False:
             self.save_surface(s,xyz,myindices,mynormals)
 
         return Mesh(vertices=verts, indices=indices, normals=mynormals, facecolor=facecolor, alpha=.5)
     
+    def create_stitching_mesh( self, s, facecolor=(1.,.3,.2), export=False):
+        '''
+        Generates one spimagine stitching Mesh that connects surface s and surface s+1
+        -surface vertices and indices determined by stitch() in StitchSurfaces Class
+        '''
+        image_shape_xyz = (self.image.shape[2],self.image.shape[1], self.image.shape[0]) 
+        
+        stitchsurfaces=StitchSurfaces(self.vertices,self.triangles,self.neighbors)        
+        stitch_verts, stitch_indices = stitchsurfaces.stitch(s)
+        
+        print('shapes')
+        print(stitch_verts.shape)
+        print(stitch_indices.shape)
+        
+        verts=np.zeros((stitch_indices.shape[0]*3,3))
+        
+        k=0
+        for l in stitch_indices:
+            for m in l:
+                verts[k]=stitch_verts[m]
+                verts[k]=self.norm_coords(verts[k],image_shape_xyz)
+                k+=1
+        
+        ind=np.arange(0,3*stitch_indices.shape[0])
+        mynormals=self.get_normals(stitch_indices,stitch_verts)
+        indices=ind.tolist()
+        
+        if export is not False:
+            self.save_surface(s,stitch_verts,stitch_indices,mynormals)
+
+        return Mesh(vertices=verts, indices=indices, normals=mynormals, facecolor=facecolor, alpha=.5)
+    
     def save_surface(self,surface,vertices,indices,normals):
+        '''Saves Mesh as obj file that can be opend by external programs'''
         filename_surface = "surface_" + str(surface) + ".obj"
         fh=open(filename_surface,"w")
         
+        fh.write('#%s vertices \n'%(self.num_columns))
         for v in vertices:
-            print(v)
-            fh.write('v ' + str(v[0]) + ' ' + str(v[1]) + ' ' + str(v[2]) +'\n')
+            fh.write('v ' + str(int(v[0])) + ' ' + str(int(v[1])) + ' ' + str(int(v[2])) +'\n')
+        fh.write('#faces\n')
         for i in indices:
-            fh.write('f ' + str(i[0]) + ' ' + str(i[1]) + ' ' + str(i[2]) +'\n')
+            fh.write('f ' + str(i[0]+1) + ' ' + str(i[1]+1) + ' ' + str(i[2]+1) +'\n')
+        fh.close
