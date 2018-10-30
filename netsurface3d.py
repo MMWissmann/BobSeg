@@ -48,7 +48,7 @@ class NetSurf3d:
         self.max_dist = max_dist
         self.surfaces = surfaces
     
-    def apply_to(self, image, max_col_height, min_col_height=0, mask=None, plot_base_graph=False):  
+    def apply_to(self, image, max_col_height, min_col_height=0, mask=None, plot_base_graph=False, solveAsIlp=False):  
         '''
         image: input 3d image
         max_col_height / min_col_height: maximal and minimal z coordinate at which a surface is expected
@@ -74,8 +74,10 @@ class NetSurf3d:
         self.compute_weights()
         self.build_flow_network()
         
+        print('Only thing happening from now on: PyMaxFlow calculates.')
         self.maxval = self.g.maxflow()
         return self.maxval
+#         return None
     
     def base_points(self, dx, dy, mask=None):
         """
@@ -222,6 +224,21 @@ class NetSurf3d:
         
         If alpha != None this method will add an additional weighted flow edge (horizontal binary costs.
         '''
+        
+        # To measure timing
+        #' http://stackoverflow.com/questions/5849800/tic-toc-functions-analog-in-python
+        def tic():
+            # Homemade version of matlab tic and toc functions
+            import time
+            global startTime_for_tictoc
+            startTime_for_tictoc = time.time()
+
+        def toc():
+            import time
+            if 'startTime_for_tictoc' in globals():
+                print("Elapsed time is " + str(time.time() - startTime_for_tictoc) + " seconds.")
+            else:
+                print("Toc: start time not set")
         print('Number of Surfaces:', self.surfaces)
         self.num_nodes = self.surfaces*self.num_columns*self.K
         # estimated num edges (in case I'd have 4 num neighbors and full pencils)
@@ -235,6 +252,7 @@ class NetSurf3d:
             c=s*self.num_columns*self.K #total number of nodes already added with the surfaces above
             c_above=(s-1)*self.num_columns*self.K #not relevant for surface 1 (s=0)
             print('c',c)
+            tic()
 
             for i in range( self.num_columns ):
 
@@ -244,7 +262,7 @@ class NetSurf3d:
                         self.g.add_tedge(c+i*self.K+k, -self.w_tilde[i,k], 0)
                     else:
                         self.g.add_tedge(c+i*self.K+k, 0, self.w_tilde[i,k])
-
+                        
                 # connect column to i-chain
                 for k in range(1,self.K):
                     self.g.add_edge(c+i*self.K+k, c+i*self.K+k-1, self.INF, 0)
@@ -270,6 +288,8 @@ class NetSurf3d:
                         #introducing min intersurface distance
                         k3 = min(self.K,k+self.min_dist)
                         self.g.add_edge(c+i*self.K+k, c_above+i*self.K+k3, self.INF, 0)
+            toc()            
+            print('Done with surface',s)
                            
     def get_counts( self ):
         size_s_comp = 0
@@ -332,14 +352,14 @@ class NetSurf3d:
         get normal vectors for spimagine mesh generation
         '''
         norm = np.zeros( verts.shape, dtype=verts.dtype )
-        tris = verts[faces]     
-        n = np.cross( tris[::,1 ] - tris[::,0]  , tris[::,2 ] - tris[::,0] )
-        n=self.norm_vec(arr=n)
+        tris = verts[faces]     # gives [[triangle1:[x,y,z],[x,y,z],[x,y,z]],[triangle2:[],[],[]]...]
+        n = np.cross( tris[::,1 ] - tris[::,0]  , tris[::,2 ] - tris[::,0] ) #cross product every triangle (len(n)=len(faces))
+        n=self.norm_vec(arr=n)     
         norm[ faces[:,0] ] += n
         norm[ faces[:,1] ] += n
         norm[ faces[:,2] ] += n
         norm=self.norm_vec(arr=norm)
-        return norm[faces]
+        return norm
         
     def norm_coords(self,cabs,pixelsizes):
         """ 
@@ -376,8 +396,10 @@ class NetSurf3d:
         if s == 0:
             self.vertices=xyz
         else:
-            self.vertices=np.stack((self.vertices,xyz))
-                    
+            self.vertices=np.append(self.vertices,[xyz])
+            self.vertices=np.reshape(self.vertices,(s+1,self.num_columns,3))
+        
+        print('vertices', self.vertices.shape)
         k=0
         for l in myindices:
             for m in l:
@@ -386,11 +408,13 @@ class NetSurf3d:
                 k+=1
         
         ind=np.arange(0,3*myindices.shape[0])
-        mynormals=self.get_normals(myindices,xyz)
+        self.mynormals=self.get_normals(myindices,xyz)
         indices=ind.tolist()
         
         if not export is False:
-            self.save_surface(s,xyz,myindices,mynormals)
+            self.save_surface(s,xyz,myindices,self.mynormals)
+        
+        mynormals = self.mynormals[myindices]
 
         return Mesh(vertices=verts, indices=indices, normals=mynormals, facecolor=facecolor, alpha=.5)
     
@@ -401,12 +425,9 @@ class NetSurf3d:
         '''
         image_shape_xyz = (self.image.shape[2],self.image.shape[1], self.image.shape[0]) 
         
-        stitchsurfaces=StitchSurfaces(self.vertices,self.triangles,self.neighbors)        
-        stitch_verts, stitch_indices = stitchsurfaces.stitch(s)
-        
-        print('shapes')
-        print(stitch_verts.shape)
-        print(stitch_indices.shape)
+        stitchsurfaces=StitchSurfaces(self.vertices,self.triangles) 
+        stitch_surfaces=np.array([s,s+1])
+        stitch_verts, stitch_indices = stitchsurfaces.stitch(stitch_surfaces)
         
         verts=np.zeros((stitch_indices.shape[0]*3,3))
         
@@ -422,19 +443,44 @@ class NetSurf3d:
         indices=ind.tolist()
         
         if export is not False:
-            self.save_surface(s,stitch_verts,stitch_indices,mynormals)
+            self.save_surface(s,stitch_verts,stitch_indices,mynormals,'stitch')
 
         return Mesh(vertices=verts, indices=indices, normals=mynormals, facecolor=facecolor, alpha=.5)
     
-    def save_surface(self,surface,vertices,indices,normals):
+    def show_sections(self,plane_orig,plane_normal,num_slices):
+        
+        stitchsurfaces=StitchSurfaces(self.vertices,self.triangles)
+        
+        plane_normal=np.array(plane_normal)
+        length=np.sqrt(plane_normal[0]**2+plane_normal[1]**2+plane_normal[2]**2)
+        plane_normal=plane_normal/length
+        
+        sections=stitchsurfaces.get_multisections(plane_orig,plane_normal,num_slices)
+        return sections
+    
+    def save_surface(self,surface,vertices,indices,normals,stitch=None):
         '''Saves Mesh as obj file that can be opend by external programs'''
+        
         filename_surface = "surface_" + str(surface) + ".obj"
+        if not stitch is None:
+            filename_surface=str(stitch) + filename_surface
+            
         fh=open(filename_surface,"w")
         
         fh.write('#%s vertices \n'%(self.num_columns))
+        vv=0
         for v in vertices:
+            vv+=1
             fh.write('v ' + str(int(v[0])) + ' ' + str(int(v[1])) + ' ' + str(int(v[2])) +'\n')
+        print('v',vv)
+        fh.write('#normals\n')
+        nn=0
+        for n in normals:
+            nn+=1
+            fh.write('vn ' + str(n[0]) + ' '+ str(n[1]) + ' ' + str(n[2]) + '\n')
+        print('n',nn)
         fh.write('#faces\n')
         for i in indices:
             fh.write('f ' + str(i[0]+1) + ' ' + str(i[1]+1) + ' ' + str(i[2]+1) +'\n')
         fh.close
+       

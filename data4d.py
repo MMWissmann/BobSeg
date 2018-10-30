@@ -4,6 +4,12 @@ import maxflow
 import math
 from tifffile import imread, imsave
 import _pickle as pickle
+from PIL import Image
+
+import matplotlib.pyplot as plt
+from matplotlib import collections as mc
+import pylab as pl
+from scipy import ndimage
 
 from spimagine import volfig, volshow
 from spimagine import EllipsoidMesh, Mesh
@@ -47,10 +53,11 @@ class Data4d:
     colors_darkblue = [(.1,.3,1.0-.1*i) for i in range(6)]
     colors_diverse = [ colors_green[0], colors_red[0], colors_blue[0], colors_gold[0], colors_yellow[0],colors_grey[1] ]
     
-    def __init__( self, filenames, filenames_mask=None, pixelsize=None, silent=True, plane=None ):
+    def __init__( self, filenames, axis='z', filenames_mask=None, pixelsize=None, silent=True, plane=None ):
         """
         Parameters:
             filenames   -  list of filenames (one per time point)
+            axis   -  searching for surfaces along z,x, or y-axis
             filenames_mask- list of filenames of 2d mask images
             pixelsize   -  calibration, eg. for volume computation
             silent      -  if True, no (debug/info) outputs will be printed on stdout
@@ -61,7 +68,7 @@ class Data4d:
         if not pixelsize is None: self.pixelsize = pixelsize
         
         # load images
-        self.load_from_files( self.filenames )
+        self.load_from_files( self.filenames, axis )
         if not filenames_mask is None: 
             self.filenames_mask = filenames_mask
             self.load_from_files_mask( self.filenames_mask )
@@ -200,24 +207,30 @@ class Data4d:
         self.load_from_files( self.filenames ) # load the raw images from file too!!!
         if compute_netsurfs: self.segment()
 
-    def load_from_files( self, filenames ):
+    def load_from_files( self, filenames, axis ):
         self.images = [None]*len(filenames)
+        swap=0
+        if axis=='x':
+            swap=2
+        elif axis=='y':
+            swap=1
         for i in range(len(filenames)):
             self.images[i] = imread(filenames[i])
             if not self.silent:
                 print('Dimensions (z,y,x) of frame', i, ': ', self.images[i].shape)
-                
+                print('Searching for surface(s) along %s direction'%axis)
+            if swap != 0:
+                print('Changing %s and z axis'%axis)
+                self.images[i] = np.swapaxes(self.images[i],0,swap)
+                print('New dimensions (z,y,x) of frame', i, ':', self.images[i].shape)
+                            
     def load_from_files_mask( self, mask_names ):
         self.mask = [None]*len(mask_names)
         for i in range(len(mask_names)):
             image_obj = Image.open(mask_names[i])
-            #rotated_image = image_obj.transpose(Image.FLIP_LEFT_RIGHT)
-            #rotated_image = image_obj.transpose(Image.FLIP_TOP_BOTTOM)
-            #rotated_image.save('/Users/wissmann/BobSeg/rotated_mask.tif')
-            #self.mask[i] = imread('/Users/wissmann/BobSeg/rotated_mask.tif')
             self.mask[i] = imread(mask_names[i])
             if not self.silent:
-                print('Dimensions (z,y,x) of mask', i, ': ', self.mask[i].shape)
+                print('Dimensions (y,x) of mask', i, ': ', self.mask[i].shape)
             
     def add_plane(self):
         av=np.average(self.images[0])
@@ -293,13 +306,93 @@ class Data4d:
             if not netsurf is None:
                 if show_surfaces: 
                     for s in range(self.surfaces):
-                        print('s',s)
                         self.spimagine.glWidget.add_mesh(netsurf.create_surface_mesh( s,facecolor=self.colors_diverse[0],export=export) )
                 if not stitch is False:
                     for s in range(self.surfaces-1):
                         print('stitching surfaces: ', s, s+1)
                         self.spimagine.glWidget.add_mesh(netsurf.create_stitching_mesh( s,facecolor=self.colors_diverse[0],export=export) )
         return self.spimagine
+    
+    def show_sections(self,f,plane_orig,plane_normal,num_slices,show_image=False):
+        for oid in range(len(self.object_names)):
+            netsurf = self.netsurfs[oid][f]
+            i=0
+            for direc in plane_normal:
+                if direc==1:
+                    d=i
+                i+=1
+            
+            if not netsurf is None:
+                secs=netsurf.show_sections(plane_orig,plane_normal,num_slices)
+                print('in data show')
+#                 print(secs[0].shape)
+#                 print(secs)
+                
+                imgshape=np.array(self.images[f].shape[::-1])
+                imgshape=np.delete(imgshape,d)
+                fig, ax = plt.subplots(num_slices[-1]+1-num_slices[0],figsize=[10,80])
+               
+                frame=num_slices[-1]+1-num_slices[0]
+
+                if frame == 1:
+                    sec=[]
+                    for surface in secs:
+                        sec.append(secs[surface][0][0])
+                    sec=np.array(sec)
+                    assert len(sec.shape)==4 or len(sec.shape)==3
+                    if len(sec.shape)==4:
+                        n=sec.shape[0]*sec.shape[1]
+                        sec=np.reshape(sec,(n,2,3))
+                        
+                    sec=np.delete(sec,d,2)
+                    sec+=[0,2]
+                    print('frame',num_slices[0])
+                    lc = mc.LineCollection(sec, linewidths=2)
+
+                    ax.add_collection(lc)
+                    if not show_image is False:
+                        if d==0:
+                            img=self.images[f][:,:,num_slices[0]]
+                        elif d==1:
+                            img=self.images[f][:,num_slices[0],:]
+                        else:
+                            img=self.images[f][num_slices[0],:,:]
+                        ax.imshow(img,origin='lower')
+                    ax.axis([0,imgshape[0],0,imgshape[1]])
+
+                elif frame > 1:
+                    
+                    sec={}
+                    lc={}
+                    k=0
+                    for frames in num_slices:
+                        sec[k]=[]
+                        for surface in secs:
+                            sec[k].append(secs[surface][k][0])
+
+                        sec[k]=np.array(sec[k])
+                        assert len(sec[k].shape)==4 or len(sec[k].shape)==3
+                        if len(sec[k].shape)==4:
+                            n=sec[k].shape[0]*sec[k].shape[1]
+                            sec[k]=np.reshape(sec[k],(n,2,3))
+                        sec[k]=np.delete(sec[k],d,2)
+                        sec[k]+=[0,2]
+                        print('frame',frames)
+                        
+                        lc[k] = mc.LineCollection(sec[k], linewidths=2)
+
+                        ax[k].add_collection(lc[k])
+                        if not show_image is False:
+                            if d==0:
+                                img=self.images[f][:,:,frames]
+                            elif d==1:
+                                img=self.images[f][:,frames,:]
+                            else:
+                                img=self.images[f][frames,:,:]
+                            ax[k].imshow(img,origin='lower')
+                        ax[k].axis([0,imgshape[0],0,imgshape[1]])
+                        k+=1
+#                     fig.show
     
     def hide_all_objects( self ):
         while len(self.spimagine.glWidget.meshes)>0:
