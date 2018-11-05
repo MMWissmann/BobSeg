@@ -326,6 +326,13 @@ class Data4dRadial:
             segimgs[f] = vis[:,:,0]
         return segimgs
     
+    def create_surface_mesh(self,f, facecolor):
+        meshes=[]
+        for oid in range(len(self.object_names)):
+            netsurf = self.netsurfs[oid][f]
+            meshes.append(netsurf.create_surface_mesh( facecolor=facecolor)) 
+        return meshes
+    
     def show_frame( self, f, show_surfaces=False, show_centers=False, stackUnits=[1.,1.,1.], raise_window=True ):
         assert f>=0 and f<len(self.images)
         
@@ -341,6 +348,7 @@ class Data4dRadial:
         
         for oid in range(len(self.object_names)):
             netsurf = self.netsurfs[oid][f]
+            print(netsurf)
             if not netsurf is None:
                 if show_centers:  self.spimagine.glWidget.add_mesh( 
                         netsurf.create_center_mesh( facecolor=self.colors_diverse[0]) )

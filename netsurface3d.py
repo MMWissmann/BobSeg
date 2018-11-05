@@ -31,7 +31,7 @@ class NetSurf3d:
     g = None
     maxval = None
     
-    def __init__(self, K=50, max_delta_k=4, dx=1, dy=1, surfaces=1, min_dist=0, max_dist=50):
+    def __init__(self, K=50, max_delta_k=4, dx=1, dy=1, surfaces=1, min_dist=0, max_dist=50,axis=0):
         """
         Parameters:
             K           -  how many sample points per column
@@ -47,6 +47,7 @@ class NetSurf3d:
         self.min_dist = min_dist
         self.max_dist = max_dist
         self.surfaces = surfaces
+        self.axis = axis
     
     def apply_to(self, image, max_col_height, min_col_height=0, mask=None, plot_base_graph=False, solveAsIlp=False):  
         '''
@@ -74,7 +75,7 @@ class NetSurf3d:
         self.compute_weights()
         self.build_flow_network()
         
-        print('Only thing happening from now on: PyMaxFlow calculates.')
+#        print('Only thing happening from now on: PyMaxFlow calculates.')
         self.maxval = self.g.maxflow()
         return self.maxval
 #         return None
@@ -239,6 +240,8 @@ class NetSurf3d:
                 print("Elapsed time is " + str(time.time() - startTime_for_tictoc) + " seconds.")
             else:
                 print("Toc: start time not set")
+        
+        
         print('Number of Surfaces:', self.surfaces)
         self.num_nodes = self.surfaces*self.num_columns*self.K
         # estimated num edges (in case I'd have 4 num neighbors and full pencils)
@@ -251,7 +254,7 @@ class NetSurf3d:
             
             c=s*self.num_columns*self.K #total number of nodes already added with the surfaces above
             c_above=(s-1)*self.num_columns*self.K #not relevant for surface 1 (s=0)
-            print('c',c)
+#             print('c',c)
             tic()
 
             for i in range( self.num_columns ):
@@ -374,7 +377,7 @@ class NetSurf3d:
         cnorm[2]+=3/num_grid_z
         
         return tuple(cnorm)
-    
+
     def create_surface_mesh( self, s, facecolor=(1.,.3,.2), export=False):
         '''
         Generates one spimagine Mesh of the surface s
@@ -382,7 +385,8 @@ class NetSurf3d:
         -indices that choose which vertices to triangulate given by self.triangles in neighbors()
         '''
         
-        image_shape_xyz = (self.image.shape[2],self.image.shape[1], self.image.shape[0]) 
+        image_shape_xyz = [self.image.shape[2],self.image.shape[1], self.image.shape[0]]
+        
         xyz=np.zeros((self.num_columns,3))
         
         myindices=self.triangles
@@ -392,7 +396,13 @@ class NetSurf3d:
         for i in range(s*self.num_columns, self.num_columns+s*self.num_columns):
             xyz[j]=self.get_surface_point(i,s)
             j+=1
-            
+        
+        #rotate image_shape and vertice-coordinates back to original xyz in case of surface detection other than z-direction
+        if self.axis!=0:
+            axis=abs(self.axis-2)        #from [012] --> [210]
+            image_shape_xyz[2], image_shape_xyz[axis] = image_shape_xyz[axis], image_shape_xyz[2]
+            xyz[:,[2,axis]] = xyz[:,[axis,2]]
+        
         if s == 0:
             self.vertices=xyz
         else:
@@ -404,7 +414,7 @@ class NetSurf3d:
         for l in myindices:
             for m in l:
                 verts[k]=xyz[m]
-                verts[k]=self.norm_coords(verts[k],image_shape_xyz)
+                verts[k]=self.norm_coords(verts[k],tuple(image_shape_xyz))
                 k+=1
         
         ind=np.arange(0,3*myindices.shape[0])

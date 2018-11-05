@@ -53,7 +53,7 @@ class Data4d:
     colors_darkblue = [(.1,.3,1.0-.1*i) for i in range(6)]
     colors_diverse = [ colors_green[0], colors_red[0], colors_blue[0], colors_gold[0], colors_yellow[0],colors_grey[1] ]
     
-    def __init__( self, filenames, axis='z', filenames_mask=None, pixelsize=None, silent=True, plane=None ):
+    def __init__( self, filenames, axis=0, filenames_mask=None, pixelsize=None, silent=True, plane=None ):
         """
         Parameters:
             filenames   -  list of filenames (one per time point)
@@ -64,12 +64,21 @@ class Data4d:
             plane       -  if True, additional plane on top and bottom will be added with average intensity of whole image
         """
         self.silent = silent
+        self.axis = axis
         self.filenames = filenames
-        if not pixelsize is None: self.pixelsize = pixelsize
+        NoneType=type(None)
+        if not isinstance(pixelsize,NoneType): self.pixelsize = pixelsize
+        
+        if self.axis==0:
+            axis='z'
+        if self.axis==1:
+            axis='y'
+        if self.axis==2:
+            axis='x'
         
         # load images
         self.load_from_files( self.filenames, axis )
-        if not filenames_mask is None: 
+        if not None in filenames_mask: 
             self.filenames_mask = filenames_mask
             self.load_from_files_mask( self.filenames_mask )
         if not plane is None: self.add_plane()
@@ -110,7 +119,8 @@ class Data4d:
                 return i
         return -1
         
-    def add_object_at ( self, oid, min_surf_dist, max_surf_dist, frame, frame_to=None, segment_it=False, plot_base_graph=False ):
+    def add_object_at ( self, oid, min_surf_dist, max_surf_dist, 
+                       frame, frame_to=None, segment_it=False, plot_base_graph=False ):
         """
         Makes a given (already added) object exist at a frame (or a sequence of consecutive frames).
         Parameters:
@@ -150,13 +160,14 @@ class Data4d:
         assert f<len(self.images)
         if self.mask is None: mask=None
         else: mask = self.mask[f]
+
         
         try:
             self.netsurfs[oid][f] = None
         except:
             self.netsurfs[oid] = [None] * len(self.images)
         
-        self.netsurfs[oid][f] = NetSurf3d(K=self.K, max_delta_k=self.max_delta_k, dx=self.dx, dy=self.dy, surfaces=self.surfaces, min_dist=self.min_dist, max_dist=self.max_dist)
+        self.netsurfs[oid][f] = NetSurf3d(K=self.K, max_delta_k=self.max_delta_k, dx=self.dx, dy=self.dy, surfaces=self.surfaces, min_dist=self.min_dist, max_dist=self.max_dist, axis=self.axis)
         optimum = self.netsurfs[oid][f].apply_to(self.images[f], 
                                                  self.object_max_surf_dist[oid][f], 
                                                  self.object_min_surf_dist[oid][f],
@@ -273,10 +284,12 @@ class Data4d:
     
     def give_surface_points(self,f):
         x = []
+        i=[]
         for oid in range(len(self.object_names)):
             netsurf = self.netsurfs[oid][f]
             x.append((netsurf.give_surface_points()))
-        return x
+            i.append((netsurf.triangles))
+        return x,i
     
     def get_segment(self,f,column_id):
         for oid in range(len(self.object_names)):
@@ -290,6 +303,9 @@ class Data4d:
     
     def show_frame( self, f, show_surfaces=False, show_centers=False, stackUnits=[1.,1.,1.], raise_window=True, export=False, stitch=False ):
         assert f>=0 and f<len(self.images)
+        
+        if self.axis != 0:
+            self.images[f] = np.swapaxes(self.images[f],0,self.axis)
         
         self.current_frame = f
         if self.spimagine is None:
@@ -313,6 +329,18 @@ class Data4d:
                         self.spimagine.glWidget.add_mesh(netsurf.create_stitching_mesh( s,facecolor=self.colors_diverse[0],export=export) )
         return self.spimagine
     
+    def create_surface_mesh(self,f,oid,facecolor,export=False,stitch=False):
+        mesh=[]
+        netsurf = self.netsurfs[oid][f]
+        for s in range(self.surfaces):
+            mesh.append(netsurf.create_surface_mesh( s,facecolor=facecolor,export=export))
+        if not stitch is False:
+            assert self.surfaces > 1
+            for s in range(self.surfaces-1):
+                print('stitching surfaces: ', s, s+1)
+                mesh.append(netsurf.create_stitching_mesh( s,facecolor=facecolor,export=export) )
+        return mesh
+                
     def show_sections(self,f,plane_orig,plane_normal,num_slices,show_image=False):
         for oid in range(len(self.object_names)):
             netsurf = self.netsurfs[oid][f]

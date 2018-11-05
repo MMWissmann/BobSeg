@@ -41,8 +41,8 @@ class StitchSurfaces:
             triangles2=self.triangle_list(self.indices[surface2])
         else: print('Array of indices should either be 2-dimensional or %s-dimensional'%len(vertices.shape))
         
-        edge_points=self.find_edge_points(surface, triangles1) #edge_points are the vertices on edge of surface 
-        edge_points2=self.find_edge_points(surface+1,triangles2) #edge-vertices of surface+1
+        edge_points=self.find_edge_points(surface1, triangles1) #edge_points are the vertices on edge of surface 
+        edge_points2=self.find_edge_points(surface2,triangles2) #edge-vertices of surface+1
         
         vertices, indices = self.find_edge_neighbors(edge_points,edge_points2) 
                 
