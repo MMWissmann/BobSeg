@@ -333,6 +333,20 @@ class Data4dRadial:
             meshes.append(netsurf.create_surface_mesh( facecolor=facecolor)) 
         return meshes
     
+    def give_surface_points(self,f,k=None):
+        #k is pointless here, but makes call from Visualization.py easier
+        inds=[]
+        verts=[]
+        for oid in range(len(self.object_names)):
+            netsurf = self.netsurfs[oid][f]
+            myverts = np.zeros((netsurf.num_columns, 3))            
+            for i in range(netsurf.num_columns):
+                myverts[i]=netsurf.get_surface_point(i)
+            verts.append(myverts)
+            inds.append(netsurf.triangles)
+            
+        return verts,inds
+                
     def show_frame( self, f, show_surfaces=False, show_centers=False, stackUnits=[1.,1.,1.], raise_window=True ):
         assert f>=0 and f<len(self.images)
         

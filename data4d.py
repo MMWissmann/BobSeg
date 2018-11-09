@@ -282,14 +282,14 @@ class Data4d:
             segimgs[f] = vis[:,:,0]
         return segimgs
     
-    def give_surface_points(self,f):
+    def give_surface_points(self,f,oid):
         x = []
         i=[]
-        for oid in range(len(self.object_names)):
-            netsurf = self.netsurfs[oid][f]
-            x.append((netsurf.give_surface_points()))
-            i.append((netsurf.triangles))
-        return x,i
+        netsurf = self.netsurfs[oid][f]
+        x.append(netsurf.vertices)
+        i.append(netsurf.triangles)
+        print(np.array(x).shape)
+        return np.array(x),np.array(i)
     
     def get_segment(self,f,column_id):
         for oid in range(len(self.object_names)):
@@ -344,11 +344,7 @@ class Data4d:
     def show_sections(self,f,plane_orig,plane_normal,num_slices,show_image=False):
         for oid in range(len(self.object_names)):
             netsurf = self.netsurfs[oid][f]
-            i=0
-            for direc in plane_normal:
-                if direc==1:
-                    d=i
-                i+=1
+            d=self.get_direction(plane_normal)
             
             if not netsurf is None:
                 secs=netsurf.show_sections(plane_orig,plane_normal,num_slices)
@@ -358,70 +354,59 @@ class Data4d:
                 
                 imgshape=np.array(self.images[f].shape[::-1])
                 imgshape=np.delete(imgshape,d)
-                fig, ax = plt.subplots(num_slices[-1]+1-num_slices[0],figsize=[10,80])
-               
                 frame=num_slices[-1]+1-num_slices[0]
+                fig, ax = plt.subplots(frame,figsize=[10,80])              
 
-                if frame == 1:
-                    sec=[]
-                    for surface in secs:
-                        sec.append(secs[surface][0][0])
-                    sec=np.array(sec)
-                    assert len(sec.shape)==4 or len(sec.shape)==3
-                    if len(sec.shape)==4:
-                        n=sec.shape[0]*sec.shape[1]
-                        sec=np.reshape(sec,(n,2,3))
-                        
-                    sec=np.delete(sec,d,2)
-                    sec+=[0,2]
-                    print('frame',num_slices[0])
-                    lc = mc.LineCollection(sec, linewidths=2)
+            lc={}
+            k=0
+            for frames in num_slices:
+                sec=[]
+                for surface in secs:
+                    sec.append(secs[surface][k][0])
+                sec=self.process(sec,d)
 
-                    ax.add_collection(lc)
+                print('frame',frames)
+
+                lc[k] = mc.LineCollection(sec, linewidths=2)
+
+                if d==0:
+                    img=self.images[f][:,:,frames]
+                elif d==1:
+                    img=self.images[f][:,frames,:]
+                else:
+                    img=self.images[f][frames,:,:]
+
+                if frame==1:
+                    ax.add_collection(lc[k])
                     if not show_image is False:
-                        if d==0:
-                            img=self.images[f][:,:,num_slices[0]]
-                        elif d==1:
-                            img=self.images[f][:,num_slices[0],:]
-                        else:
-                            img=self.images[f][num_slices[0],:,:]
                         ax.imshow(img,origin='lower')
                     ax.axis([0,imgshape[0],0,imgshape[1]])
-
-                elif frame > 1:
-                    
-                    sec={}
-                    lc={}
-                    k=0
-                    for frames in num_slices:
-                        sec[k]=[]
-                        for surface in secs:
-                            sec[k].append(secs[surface][k][0])
-
-                        sec[k]=np.array(sec[k])
-                        assert len(sec[k].shape)==4 or len(sec[k].shape)==3
-                        if len(sec[k].shape)==4:
-                            n=sec[k].shape[0]*sec[k].shape[1]
-                            sec[k]=np.reshape(sec[k],(n,2,3))
-                        sec[k]=np.delete(sec[k],d,2)
-                        sec[k]+=[0,2]
-                        print('frame',frames)
-                        
-                        lc[k] = mc.LineCollection(sec[k], linewidths=2)
-
-                        ax[k].add_collection(lc[k])
-                        if not show_image is False:
-                            if d==0:
-                                img=self.images[f][:,:,frames]
-                            elif d==1:
-                                img=self.images[f][:,frames,:]
-                            else:
-                                img=self.images[f][frames,:,:]
-                            ax[k].imshow(img,origin='lower')
-                        ax[k].axis([0,imgshape[0],0,imgshape[1]])
-                        k+=1
-#                     fig.show
+                elif frame>1:
+                    ax[k].add_collection(lc[k])
+                    if not show_image is False:
+                        ax[k].imshow(img,origin='lower')
+                    ax[k].axis([0,imgshape[0],0,imgshape[1]])
+                k+=1
     
+    def get_direction(self,plane_normal):
+        i=0
+        for direc in plane_normal:
+            if direc==1:
+                direction=i
+            i+=1
+        return direction
+    
+    def process(self,array,direction):
+        array=np.array(array)
+        assert len(array.shape)==4 or len(array.shape)==3
+        if len(array.shape)==4:
+            n=array.shape[0]*array.shape[1]
+            array=np.reshape(array,(n,2,3))
+        array=np.delete(array,direction,2)
+        array+=[0,2]
+        return array
+
+
     def hide_all_objects( self ):
         while len(self.spimagine.glWidget.meshes)>0:
             self.spimagine.glWidget.meshes.pop(0)

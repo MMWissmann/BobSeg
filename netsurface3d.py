@@ -8,6 +8,7 @@ from spimagine import EllipsoidMesh, Mesh
 import matplotlib.pyplot as plt
 
 from stitch_surfaces import StitchSurfaces
+from CrossSection import CrossSection
 
 class NetSurf3d:
     """
@@ -291,9 +292,9 @@ class NetSurf3d:
                         #introducing min intersurface distance
                         k3 = min(self.K,k+self.min_dist)
                         self.g.add_edge(c+i*self.K+k, c_above+i*self.K+k3, self.INF, 0)
-            toc()            
             print('Done with surface',s)
-                           
+            toc()            
+                                       
     def get_counts( self ):
         size_s_comp = 0
         size_t_comp = 0
@@ -306,11 +307,10 @@ class NetSurf3d:
         return size_s_comp, size_t_comp
     
     def give_surface_points( self):
-        myverts = []
+        myverts = {}
         for s in range(self.surfaces):
             for i in range(s*self.num_columns, self.num_columns+s*self.num_columns):
-                    myverts.append(self.get_surface_point(i,s))
-        
+                    myverts[s]=self.get_surface_point(i,s)
         return np.array(myverts)        
             
     def get_surface_point( self, column_id, s ):
@@ -459,13 +459,13 @@ class NetSurf3d:
     
     def show_sections(self,plane_orig,plane_normal,num_slices):
         
-        stitchsurfaces=StitchSurfaces(self.vertices,self.triangles)
+        cross_section=CrossSection(self.vertices,self.triangles)
         
         plane_normal=np.array(plane_normal)
         length=np.sqrt(plane_normal[0]**2+plane_normal[1]**2+plane_normal[2]**2)
         plane_normal=plane_normal/length
         
-        sections=stitchsurfaces.get_multisections(plane_orig,plane_normal,num_slices)
+        sections=cross_section.get_multisections(plane_orig,plane_normal,num_slices)
         return sections
     
     def save_surface(self,surface,vertices,indices,normals,stitch=None):
