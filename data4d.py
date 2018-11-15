@@ -139,6 +139,9 @@ class Data4d:
         assert frame_to < len(self.images)
         assert frame <= frame_to
         
+        if max_surf_dist == 0:
+            max_surf_dist = self.images[0].shape[0]
+        
         for i in range(frame,frame_to+1):
             self.object_min_surf_dist[oid][i] = (min_surf_dist)
             self.object_max_surf_dist[oid][i] = max_surf_dist        
@@ -333,12 +336,12 @@ class Data4d:
         mesh=[]
         netsurf = self.netsurfs[oid][f]
         for s in range(self.surfaces):
-            mesh.append(netsurf.create_surface_mesh( s,facecolor=facecolor,export=export))
+            mesh.append(netsurf.create_surface_mesh( s,facecolor,export))
         if not stitch is False:
             assert self.surfaces > 1
             for s in range(self.surfaces-1):
                 print('stitching surfaces: ', s, s+1)
-                mesh.append(netsurf.create_stitching_mesh( s,facecolor=facecolor,export=export) )
+                mesh.append(netsurf.create_stitching_mesh( s,facecolor,export) )
         return mesh
                 
     def show_sections(self,f,plane_orig,plane_normal,num_slices,show_image=False):

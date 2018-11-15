@@ -409,7 +409,6 @@ class NetSurf3d:
             self.vertices=np.append(self.vertices,[xyz])
             self.vertices=np.reshape(self.vertices,(s+1,self.num_columns,3))
         
-        print('vertices', self.vertices.shape)
         k=0
         for l in myindices:
             for m in l:
