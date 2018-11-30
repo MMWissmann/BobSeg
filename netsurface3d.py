@@ -88,6 +88,7 @@ class NetSurf3d:
         self.num_columns: total number of columns/ total number of vertices in base graph
         """ 
         if not mask is None: 
+            print(self.image[0].shape, mask.shape)
             assert(self.image[0].shape == mask.shape)
         
         image_length_x = self.image.shape[2]
@@ -119,7 +120,10 @@ class NetSurf3d:
         return np.array(points)
                                 
     def mask_pixel_value(self,mask,pixel):
-        
+        '''
+        Takes the mask image (pixel values only 1 and 0) and pixel
+        Returns pixel value of pixel
+        '''
         try:
             m = mask[pixel[::-1]]
             if m == 1: return True
@@ -132,13 +136,16 @@ class NetSurf3d:
         Perform Delaunay triangulation with base graph coordinates in order to find neighbored columns
         Returns adjacency list --> Array of neighboring vertices of vertex k is: self.neighbors[k] 
         '''
+        #actual triangulation of the base graph vertices --> convex hull
         tri = Delaunay(self.base_coords)
         
+        #plots triangulation of base graph
         if plot_base_graph is not False:
             plt.triplot(self.base_coords[:,0], self.base_coords[:,1], tri.simplices.copy())
             plt.plot(self.base_coords[:,0], self.base_coords[:,1], 'o')
             plt.show()
         
+        #indices for triangulation
         triangles = tri.simplices
         
         #produce adjacency list
@@ -185,7 +192,10 @@ class NetSurf3d:
                     
         return neighbors
     
-    def compute_weights(self):        
+    def compute_weights(self):
+        '''
+        Assigning weights vertices depending on corresponding pixel values
+        '''
         assert not self.image is None
         
         self.w = np.zeros([self.num_columns, self.K]) # node weights
@@ -227,7 +237,7 @@ class NetSurf3d:
         If alpha != None this method will add an additional weighted flow edge (horizontal binary costs.
         '''
         
-        # To measure timing
+        # To measure timing of building the network
         #' http://stackoverflow.com/questions/5849800/tic-toc-functions-analog-in-python
         def tic():
             # Homemade version of matlab tic and toc functions
@@ -250,6 +260,7 @@ class NetSurf3d:
 
         self.g = maxflow.Graph[float]( self.num_nodes)
         self.nodes = self.g.add_nodes( self.num_nodes )
+        
         
         for s in range(self.surfaces):
             
@@ -364,17 +375,32 @@ class NetSurf3d:
         norm=self.norm_vec(arr=norm)
         return norm
         
-    def norm_coords(self,cabs,pixelsizes):
+    def norm_coords(self,cabs,pixelsizes,axis):
         """ 
         converts from absolute pixel location in image (x,y,z) to normalized [0,1] coordinates for spimagine meshes (z,y,x).
         performs translation operation for the mesh, so that every vertex is in the middle of the respective voxel
         """        
-        cnorm = 2. * np.array(cabs, float) / np.array(pixelsizes) -1.  
+        cnorm = 2. * np.array(cabs, float) / np.array(pixelsizes) -1. 
         
         num_grid_z=min(self.K,self.image.shape[0])
-        cnorm[0]+=1/self.num_base_x
-        cnorm[1]+=1/self.num_base_y
-        cnorm[2]+=3/num_grid_z
+        norm_params=[self.num_base_x,self.num_base_y,num_grid_z]
+        norms=[1,1,5]
+        
+#         if axis ==1 or axis ==2:
+#             norm_params[axis], norm_params[2] = norm_params[2], norm_params[axis]
+#             norms[axis], norms[2] = norms[2], norms[axis]
+        
+#         print(norms[0],norm_params[0])
+        cnorm[0]+=norms[0]/norm_params[0]
+        cnorm[1]+=norms[1]/norm_params[1]
+        cnorm[2]+=norms[2]/norm_params[2]
+        
+#         print(axis)
+        
+#         if axis ==1 or axis ==2:
+#             cnorm[axis], cnorm[2] = cnorm[2], cnorm[axis]
+        
+#         print('norm_coords',norm_params)
         
         return tuple(cnorm)
 
@@ -413,7 +439,7 @@ class NetSurf3d:
         for l in myindices:
             for m in l:
                 verts[k]=xyz[m]
-                verts[k]=self.norm_coords(verts[k],tuple(image_shape_xyz))
+                verts[k]=self.norm_coords(verts[k],tuple(image_shape_xyz),self.axis)
                 k+=1
         
         ind=np.arange(0,3*myindices.shape[0])
@@ -457,7 +483,9 @@ class NetSurf3d:
         return Mesh(vertices=verts, indices=indices, normals=mynormals, facecolor=facecolor, alpha=.5)
     
     def show_sections(self,plane_orig,plane_normal,num_slices):
-        
+        '''
+        Returns cross sections through the image in plane defined plane_normal and origin
+        '''       
         cross_section=CrossSection(self.vertices,self.triangles)
         
         plane_normal=np.array(plane_normal)

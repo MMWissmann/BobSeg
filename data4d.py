@@ -66,6 +66,7 @@ class Data4d:
         self.silent = silent
         self.axis = axis
         self.filenames = filenames
+        print('filenames_mask',filenames_mask)
         NoneType=type(None)
         if not isinstance(pixelsize,NoneType): self.pixelsize = pixelsize
         
@@ -78,7 +79,7 @@ class Data4d:
         
         # load images
         self.load_from_files( self.filenames, axis )
-        if not None in filenames_mask: 
+        if not isinstance(filenames_mask,NoneType): 
             self.filenames_mask = filenames_mask
             self.load_from_files_mask( self.filenames_mask )
         if not plane is None: self.add_plane()
@@ -88,6 +89,14 @@ class Data4d:
     # ***********************************************************************************************
 
     def set_seg_params( self, K, max_delta_k, dx, dy, surfaces, min_dist, max_dist):
+        '''
+        Set parameters for building the graphical model for segmentation
+            K           -  how many sample points per column
+            max_delta_k -  maximum column height change between neighbors (as defined by adjacency)
+            dx/dy       -  divisor: choose only every d-th pixel to create a column on base graph, for x and y
+            surfaces    -  number of surfaces to be detected
+            min/max_dist-  for more than 1 surface: minimum and maximum intersurface distances !in terms of K!
+        '''
         self.K = K
         self.max_delta_k = max_delta_k
         self.dx = dx
@@ -162,7 +171,7 @@ class Data4d:
         assert f>=0
         assert f<len(self.images)
         if self.mask is None: mask=None
-        else: mask = self.mask[f]
+        else: mask = self.mask
 
         
         try:
@@ -239,12 +248,15 @@ class Data4d:
                 print('New dimensions (z,y,x) of frame', i, ':', self.images[i].shape)
                             
     def load_from_files_mask( self, mask_names ):
-        self.mask = [None]*len(mask_names)
-        for i in range(len(mask_names)):
-            image_obj = Image.open(mask_names[i])
-            self.mask[i] = imread(mask_names[i])
-            if not self.silent:
-                print('Dimensions (y,x) of mask', i, ': ', self.mask[i].shape)
+#         self.mask = [None]*len(mask_names)
+#         for i in range(len(mask_names)):
+#             image_obj = Image.open(mask_names[i])
+#             self.mask[i] = imread(mask_names[i])
+        image_obj = Image.open(mask_names)
+        self.mask = imread(mask_names)
+        if not self.silent:
+#             print('Dimensions (y,x) of mask', i, ': ', self.mask[i].shape)
+            print('Dimensions (y,x) of mask', self.mask.shape)
             
     def add_plane(self):
         av=np.average(self.images[0])
@@ -286,6 +298,10 @@ class Data4d:
         return segimgs
     
     def give_surface_points(self,f,oid):
+        '''
+        Returns vertices & faces of the triangulated mesh representing the segmentation result
+        Works only after create_surface_mesh in Netsurface3d has run (that's where the mesh generation happens)
+        '''
         x = []
         i=[]
         netsurf = self.netsurfs[oid][f]
@@ -345,6 +361,9 @@ class Data4d:
         return mesh
                 
     def show_sections(self,f,plane_orig,plane_normal,num_slices,show_image=False):
+        '''
+        Displays cross sections through resulted segmentation meshes in the plane defined by origin and normal
+        '''
         for oid in range(len(self.object_names)):
             netsurf = self.netsurfs[oid][f]
             d=self.get_direction(plane_normal)
@@ -400,6 +419,9 @@ class Data4d:
         return direction
     
     def process(self,array,direction):
+        '''
+        Calibration of coordinates for displaying cross sections
+        '''
         array=np.array(array)
         assert len(array.shape)==4 or len(array.shape)==3
         if len(array.shape)==4:
@@ -408,7 +430,6 @@ class Data4d:
         array=np.delete(array,direction,2)
         array+=[0,2]
         return array
-
 
     def hide_all_objects( self ):
         while len(self.spimagine.glWidget.meshes)>0:
